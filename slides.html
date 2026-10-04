@@ -1,0 +1,1201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>The Noisy Neighbour Inside Your GPU — Sagar Utekar</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/reveal.css"/>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/theme/black.css"/>
+<style>
+:root {
+    --bg-navy: #0a0e27;
+    --text-white: #e8e8e8;
+    --accent-blue: #00d4ff;
+    --green: #39ff14;
+    --amber: #ffb347;
+    --red: #ff4444;
+    --purple: #b877d9;
+    --code-bg: #1a1e3a;
+    --alex-color: #00d4ff;
+    --blake-color: #ff4444;
+}
+.reveal { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Helvetica Neue', sans-serif; background: var(--bg-navy); color: var(--text-white); }
+.reveal h1, .reveal h2, .reveal h3 { color: var(--text-white); text-transform: none; font-weight: 600; text-align: left; }
+.reveal h1 { font-size: 2.8em; }
+.reveal h2 { font-size: 2em; margin-bottom: 0.6em; }
+.reveal section { text-align: left; font-size: 1.2em; }
+.title-slide, .close-slide { text-align: center !important; display: flex; flex-direction: column; justify-content: center; align-items: center; }
+.title-slide h1, .title-slide h2, .title-slide p, .close-slide h2, .close-slide p { text-align: center; }
+.reveal .slides section::after {
+    content: 'OSE 2026 · 5 OCT · SOUTH HALL 3A';
+    position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%);
+    font-size: 0.5em; color: rgba(232, 232, 232, 0.3); letter-spacing: 0.1em;
+}
+.metric-card { background: linear-gradient(135deg, rgba(26, 30, 58, 0.8), rgba(26, 30, 58, 0.4)); border-radius: 16px; padding: 1.2em; border: 2px solid rgba(255, 255, 255, 0.1); position: relative; overflow: hidden; }
+.metric-card::before { content: ''; position: absolute; top: -2px; left: -2px; right: -2px; bottom: -2px; background: linear-gradient(135deg, var(--accent-blue), var(--purple)); border-radius: 16px; z-index: -1; opacity: 0.3; }
+.metric-card .number { font-size: 2.5em; font-weight: 700; margin: 0.2em 0; }
+.metric-card .label { font-size: 0.85em; opacity: 0.7; text-transform: uppercase; letter-spacing: 0.05em; }
+.code-box { background: var(--code-bg); border-radius: 12px; padding: 0.8em 1.2em; font-family: 'SF Mono', Monaco, Consolas, monospace; font-size: 0.75em; border: 1px solid rgba(255,255,255,0.1); margin: 0.6em 0; overflow-x: auto; white-space: pre; }
+.callout { border-radius: 12px; padding: 1em 1.3em; margin: 0.8em 0; border-left: 4px solid; background: rgba(255,255,255,0.05); }
+.callout.blue { border-left-color: var(--accent-blue); background: rgba(0, 212, 255, 0.1); }
+.callout.green { border-left-color: var(--green); background: rgba(57, 255, 20, 0.1); }
+.callout.red { border-left-color: var(--red); background: rgba(255, 68, 68, 0.1); }
+.callout.amber { border-left-color: var(--amber); background: rgba(255, 179, 71, 0.1); }
+.persona-tag { display: inline-block; padding: 0.3em 0.8em; border-radius: 20px; font-size: 0.7em; font-weight: 700; }
+.persona-tag.alex { background: var(--alex-color); color: var(--bg-navy); }
+.persona-tag.blake { background: var(--blake-color); color: white; }
+.step-flow { display: flex; flex-direction: column; gap: 1.2em; margin: 1.5em 0; position: relative; }
+.step-flow::before { content: ''; position: absolute; left: 20px; top: 40px; bottom: 40px; width: 2px; background: linear-gradient(180deg, var(--accent-blue), var(--purple)); }
+.step-flow .step { display: flex; align-items: center; gap: 1em; position: relative; z-index: 1; }
+.step-flow .step-number { width: 40px; height: 40px; border-radius: 50%; background: linear-gradient(135deg, var(--accent-blue), var(--purple)); display: flex; align-items: center; justify-content: center; font-weight: 700; flex-shrink: 0; font-size: 0.9em; }
+.checklist { list-style: none; padding: 0; margin: 1.5em 0; }
+.checklist li { padding: 0.7em 0; padding-left: 2.5em; position: relative; font-size: 1em; }
+.checklist li::before { content: ''; position: absolute; left: 0; top: 50%; transform: translateY(-50%); width: 24px; height: 24px; border: 2px solid var(--green); border-radius: 6px; }
+.checklist li.fragment.visible::before { background: var(--green); box-shadow: 0 0 20px rgba(57, 255, 20, 0.5); }
+.checklist li.fragment.visible::after { content: '\2713'; position: absolute; left: 6px; top: 50%; transform: translateY(-50%); color: var(--bg-navy); font-weight: 900; font-size: 0.9em; }
+.glow-text { text-shadow: 0 0 20px currentColor, 0 0 40px currentColor; }
+.split-layout { display: grid; grid-template-columns: 1fr 1fr; gap: 2em; margin-top: 1em; }
+.grid-2x2 { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5em; margin: 1em 0; }
+.grid-3x2 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1.2em; margin: 1em 0; }
+.big-quote { font-size: 1.6em; line-height: 1.4; margin: 1.5em 0; font-weight: 300; }
+.color-blue { color: var(--accent-blue); }
+.color-green { color: var(--green); }
+.color-red { color: var(--red); }
+.color-amber { color: var(--amber); }
+.color-purple { color: var(--purple); }
+svg text { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+.slide-label { font-size: 0.6em; text-transform: uppercase; letter-spacing: 0.15em; color: var(--purple); margin-bottom: 0.5em; }
+.strikethrough { text-decoration: line-through; opacity: 0.5; }
+</style>
+</head>
+<body>
+<div class="reveal">
+<div class="slides">
+
+<!-- ============================================================ -->
+<!-- SLIDE 1: Title -->
+<!-- ============================================================ -->
+<section class="title-slide">
+<svg width="600" height="600" viewBox="0 0 600 600" style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);opacity:0.06"><rect x="50" y="50" width="500" height="500" rx="40" fill="none" stroke="#00d4ff" stroke-width="2"/><line x1="150" y1="50" x2="150" y2="550" stroke="#00d4ff" stroke-width="1"/><line x1="250" y1="50" x2="250" y2="550" stroke="#00d4ff" stroke-width="1"/><line x1="350" y1="50" x2="350" y2="550" stroke="#00d4ff" stroke-width="1"/><line x1="450" y1="50" x2="450" y2="550" stroke="#00d4ff" stroke-width="1"/><line x1="50" y1="150" x2="550" y2="150" stroke="#00d4ff" stroke-width="1"/><line x1="50" y1="250" x2="550" y2="250" stroke="#00d4ff" stroke-width="1"/><line x1="50" y1="350" x2="550" y2="350" stroke="#00d4ff" stroke-width="1"/><line x1="50" y1="450" x2="550" y2="450" stroke="#00d4ff" stroke-width="1"/></svg>
+<h1 class="glow-text" style="color:var(--accent-blue);margin-bottom:0;">The Noisy Neighbour</h1>
+<h1 class="glow-text" style="color:var(--accent-blue);margin-top:0;">Inside Your GPU</h1>
+<div style="width:300px;height:3px;background:linear-gradient(90deg,var(--accent-blue),var(--purple));margin:1em auto;border-radius:2px;"></div>
+<h2 style="font-size:1.3em;font-weight:400;text-align:center;">Observing Batched LLM Inference</h2>
+<p style="font-size:0.9em;margin-top:1em;">Sagar Utekar · Senior SRE, CrowdStrike<br/>CNCF Ambassador · Kubestronaut</p>
+<p style="color:var(--amber);font-size:0.85em;">Observability Summit Europe 2026</p>
+<aside class="notes">Hi, I'm Sagar. I run GPU infrastructure for AI at CrowdStrike. Today we're hunting a ghost — a latency spike you can see but can't explain. The victim is Alex. The culprit is Blake. And they both live inside the same GPU.</aside>
+</section>
+
+<!-- ============================================================ -->
+<!-- SLIDE 2: The Noisy Neighbour You Already Know -->
+<!-- ============================================================ -->
+<section>
+<h2>The Noisy Neighbour You Already Know</h2>
+<svg viewBox="0 0 1400 300" width="100%" style="max-width:1400px;">
+<defs><filter id="glow2"><feGaussianBlur stdDeviation="3" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs>
+<rect x="50" y="20" width="1300" height="180" rx="16" fill="#1a1e3a" stroke="#555" stroke-width="2"/>
+<text x="700" y="15" text-anchor="middle" fill="#888" font-size="16">HOST NODE</text>
+<rect x="100" y="50" width="400" height="120" rx="12" fill="rgba(57,255,20,0.1)" stroke="var(--green)" stroke-width="2"/>
+<text x="300" y="95" text-anchor="middle" fill="var(--green)" font-size="20" font-weight="600">Container A: Your App</text>
+<text x="300" y="120" text-anchor="middle" fill="#aaa" font-size="14">Running normally</text>
+<rect x="550" y="145" width="10" height="20" fill="var(--green)" opacity="0.5"/><rect x="565" y="135" width="10" height="30" fill="var(--green)" opacity="0.6"/><rect x="580" y="140" width="10" height="25" fill="var(--green)" opacity="0.5"/>
+<rect x="900" y="50" width="400" height="120" rx="12" fill="rgba(255,68,68,0.15)" stroke="var(--red)" stroke-width="2" filter="url(#glow2)"/>
+<text x="1100" y="95" text-anchor="middle" fill="var(--red)" font-size="20" font-weight="600">Container B: Rogue Batch Job</text>
+<text x="1100" y="120" text-anchor="middle" fill="#aaa" font-size="14">CPU maxed out</text>
+<rect x="1000" y="110" width="10" height="55" fill="var(--red)"/><rect x="1015" y="105" width="10" height="60" fill="var(--red)"/><rect x="1030" y="108" width="10" height="57" fill="var(--red)"/><rect x="1045" y="103" width="10" height="62" fill="var(--red)"/><rect x="1060" y="110" width="10" height="55" fill="var(--red)"/><rect x="1075" y="106" width="10" height="59" fill="var(--red)"/><rect x="1090" y="104" width="10" height="61" fill="var(--red)"/>
+<line x1="850" y1="110" x2="560" y2="110" stroke="var(--red)" stroke-width="2" stroke-dasharray="8,4" marker-end="url(#arrowRed)"/>
+<defs><marker id="arrowRed" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto"><polygon points="0 0, 10 3.5, 0 7" fill="var(--red)"/></marker></defs>
+<text x="700" y="105" text-anchor="middle" fill="var(--red)" font-size="13">steals CPU cycles</text>
+<polyline points="200,250 400,255 600,260 700,270 800,290 900,310 1000,340 1100,360" fill="none" stroke="var(--amber)" stroke-width="2"/>
+<text x="200" y="245" fill="#888" font-size="12">container_cpu_throttled_seconds ▲</text>
+</svg>
+<div class="split-layout" style="font-size:0.85em;">
+<div class="metric-card"><strong>The symptoms</strong><br/>CPU throttling · increased latency · p99 spikes · but no errors</div>
+<div class="metric-card"><strong>You've seen this before</strong><div class="code-box" style="font-size:0.9em;">container_cpu_cfs_throttled_seconds_total
+container_memory_working_set_bytes</div></div>
+</div>
+<aside class="notes">You all know this problem. Container B is a rogue batch job eating CPU. Container A — your app — gets throttled. Latency spikes, no errors. You've been debugging this for years.</aside>
+</section>
+
+<!-- ============================================================ -->
+<!-- SLIDE 3: How You Fixed It -->
+<!-- ============================================================ -->
+<section>
+<h2>How You Fixed It</h2>
+<div class="grid-2x2" style="font-size:0.85em;">
+<div class="metric-card" style="border-color:rgba(57,255,20,0.3);">
+<div style="font-size:1.5em;">&#x1F512;</div>
+<strong style="color:var(--green);">Resource Limits</strong>
+<div class="code-box" style="font-size:0.85em;">resources:
+  limits:
+    cpu: "2"</div>
+<div style="opacity:0.7;font-size:0.85em;">Cap the bully</div>
+</div>
+<div class="metric-card" style="border-color:rgba(0,212,255,0.3);">
+<div style="font-size:1.5em;">&#x1F4E6;</div>
+<strong style="color:var(--accent-blue);">cgroups</strong>
+<p style="font-size:0.85em;">Kernel-level isolation. Each container gets its own box.</p>
+</div>
+<div class="metric-card" style="border-color:rgba(184,119,217,0.3);">
+<div style="font-size:1.5em;">&#x1F3D7;</div>
+<strong style="color:var(--purple);">Node Pools</strong>
+<p style="font-size:0.85em;">Dedicated nodes for batch jobs. Physical separation.</p>
+</div>
+<div class="metric-card" style="border-color:rgba(255,179,71,0.3);">
+<div style="font-size:1.5em;">&#x1F6E1;</div>
+<strong style="color:var(--amber);">Pod Anti-Affinity</strong>
+<p style="font-size:0.85em;">Keep troublemakers apart. Scheduling rules.</p>
+</div>
+</div>
+<div class="callout green" style="font-size:0.9em;">CPU noisy neighbours? <strong>Solved.</strong> Isolation works because each process has its own resources.</div>
+<aside class="notes">You fixed it four ways. Resource limits cap the bully. cgroups give kernel-level isolation. Dedicated node pools for batch jobs. Pod anti-affinity keeps troublemakers apart. CPU noisy neighbours — solved. Isolation works because each process has its own resources.</aside>
+</section>
+
+<!-- ============================================================ -->
+<!-- SLIDE 4: Now Forget Everything (THE PIVOT) -->
+<!-- ============================================================ -->
+<section>
+<h2 class="glow-text" style="color:var(--red);">Now Forget Everything</h2>
+<svg viewBox="0 0 1400 300" width="100%" style="max-width:1400px;">
+<rect x="50" y="30" width="580" height="240" rx="16" fill="rgba(57,255,20,0.05)" stroke="var(--green)" stroke-width="2"/>
+<text x="340" y="65" text-anchor="middle" fill="var(--green)" font-size="22" font-weight="700">CPU World</text>
+<text x="340" y="105" text-anchor="middle" fill="var(--text-white)" font-size="18">cgroups &#x2713;</text>
+<text x="340" y="140" text-anchor="middle" fill="var(--text-white)" font-size="18">Resource limits &#x2713;</text>
+<text x="340" y="175" text-anchor="middle" fill="var(--text-white)" font-size="18">1 process = 1 core &#x2713;</text>
+<text x="340" y="210" text-anchor="middle" fill="var(--text-white)" font-size="18">Isolation is cheap &#x2713;</text>
+<rect x="770" y="30" width="580" height="240" rx="16" fill="rgba(255,68,68,0.05)" stroke="var(--red)" stroke-width="2"/>
+<text x="1060" y="65" text-anchor="middle" fill="var(--red)" font-size="22" font-weight="700">GPU World</text>
+<text x="1060" y="105" text-anchor="middle" fill="var(--text-white)" font-size="18">No cgroups &#x2717;</text>
+<text x="1060" y="140" text-anchor="middle" fill="var(--text-white)" font-size="18">No per-request limits &#x2717;</text>
+<text x="1060" y="175" text-anchor="middle" fill="var(--text-white)" font-size="18">32 requests = 1 chip &#x2717;</text>
+<text x="1060" y="210" text-anchor="middle" fill="var(--text-white)" font-size="18">Isolation kills throughput &#x2717;</text>
+<line x1="650" y1="150" x2="750" y2="150" stroke="var(--red)" stroke-width="4" marker-end="url(#arrowRed)"/>
+</svg>
+<div class="callout red" style="font-size:1.05em;font-weight:600;">On a GPU, requests MUST share the chip. Batching is how GPUs stay efficient. The fix isn't isolation — it's <span class="color-green">observability</span>.</div>
+<aside class="notes">Now forget everything. GPUs don't have cgroups. There are no per-request resource limits. Thirty-two requests share one chip at the same time. Isolation would work but it kills throughput — you'd use 10% of a $40,000 card. On GPU, the fix isn't isolation. It's observability. That's what this talk is about.</aside>
+</section>
+
+
+<!-- ============================================================ -->
+<!-- SLIDE 5: Three Words You Need -->
+<!-- ============================================================ -->
+<section>
+<h2>Three Words You Need</h2>
+<div class="grid-3x2" style="grid-template-rows:1fr;">
+<div class="metric-card" style="text-align:center;border-color:rgba(0,212,255,0.3);">
+<svg viewBox="0 0 120 80" width="120" height="80"><rect x="10" y="10" width="100" height="60" rx="14" fill="none" stroke="var(--accent-blue)" stroke-width="2"/><circle cx="35" cy="40" r="6" fill="var(--accent-blue)" opacity="0.6"/><circle cx="60" cy="40" r="6" fill="var(--accent-blue)" opacity="0.8"/><circle cx="85" cy="40" r="6" fill="var(--accent-blue)"/></svg>
+<div class="number color-blue" style="font-size:1.8em;">Request</div>
+<p style="font-size:0.8em;opacity:0.8;">Someone sends text. The model writes back, one piece at a time.</p>
+</div>
+<div class="metric-card" style="text-align:center;border-color:rgba(57,255,20,0.3);">
+<svg viewBox="0 0 120 80" width="120" height="80"><rect x="15" y="10" width="90" height="60" rx="8" fill="none" stroke="var(--green)" stroke-width="2"/><rect x="25" y="20" width="14" height="14" rx="2" fill="var(--green)" opacity="0.4"/><rect x="43" y="20" width="14" height="14" rx="2" fill="var(--green)" opacity="0.6"/><rect x="61" y="20" width="14" height="14" rx="2" fill="var(--green)" opacity="0.8"/><rect x="79" y="20" width="14" height="14" rx="2" fill="var(--green)"/><rect x="25" y="40" width="14" height="14" rx="2" fill="var(--green)" opacity="0.5"/><rect x="43" y="40" width="14" height="14" rx="2" fill="var(--green)" opacity="0.7"/><rect x="61" y="40" width="14" height="14" rx="2" fill="var(--green)" opacity="0.9"/><rect x="79" y="40" width="14" height="14" rx="2" fill="var(--green)"/></svg>
+<div class="number color-green" style="font-size:1.8em;">GPU</div>
+<p style="font-size:0.8em;opacity:0.8;">The chip that does the maths. Fast at many sums at once.</p>
+</div>
+<div class="metric-card" style="text-align:center;border-color:rgba(184,119,217,0.3);">
+<svg viewBox="0 0 120 80" width="120" height="80"><circle cx="30" cy="30" r="10" fill="none" stroke="var(--purple)" stroke-width="2"/><circle cx="90" cy="30" r="10" fill="none" stroke="var(--purple)" stroke-width="2"/><circle cx="30" cy="60" r="10" fill="none" stroke="var(--purple)" stroke-width="2"/><circle cx="90" cy="60" r="10" fill="none" stroke="var(--purple)" stroke-width="2"/><line x1="40" y1="30" x2="80" y2="30" stroke="var(--purple)" stroke-width="1.5"/><line x1="40" y1="60" x2="80" y2="60" stroke="var(--purple)" stroke-width="1.5"/><line x1="30" y1="40" x2="30" y2="50" stroke="var(--purple)" stroke-width="1.5"/><line x1="90" y1="40" x2="90" y2="50" stroke="var(--purple)" stroke-width="1.5"/></svg>
+<div class="number color-purple" style="font-size:1.8em;">Batch</div>
+<p style="font-size:0.8em;opacity:0.8;">Several requests on that chip at the same moment, sharing one step.</p>
+</div>
+</div>
+<aside class="notes">Three words. A request is someone asking a question. A GPU is the chip that does the math. A batch is multiple requests sharing that chip at the same time.</aside>
+</section>
+
+<!-- ============================================================ -->
+<!-- SLIDE 6: The Table Metaphor -->
+<!-- ============================================================ -->
+<section>
+<h2>The Table Metaphor</h2>
+<svg viewBox="0 0 1200 400" width="100%" style="max-width:1200px;display:block;margin:0 auto;">
+<defs><filter id="glow6"><feGaussianBlur stdDeviation="4" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs>
+<!-- Table -->
+<rect x="350" y="120" width="500" height="200" rx="30" fill="#1a1e3a" stroke="#555" stroke-width="2"/>
+<text x="600" y="225" text-anchor="middle" fill="#666" font-size="18">THE TABLE (BATCH)</text>
+<!-- Blue chairs (Alex) -->
+<circle cx="400" cy="90" r="22" fill="rgba(0,212,255,0.2)" stroke="var(--accent-blue)" stroke-width="2"/><text x="400" y="96" text-anchor="middle" fill="var(--accent-blue)" font-size="14" font-weight="700">A</text>
+<circle cx="500" cy="90" r="22" fill="rgba(0,212,255,0.2)" stroke="var(--accent-blue)" stroke-width="2"/><text x="500" y="96" text-anchor="middle" fill="var(--accent-blue)" font-size="14" font-weight="700">A</text>
+<circle cx="600" cy="90" r="22" fill="rgba(0,212,255,0.2)" stroke="var(--accent-blue)" stroke-width="2"/><text x="600" y="96" text-anchor="middle" fill="var(--accent-blue)" font-size="14" font-weight="700">A</text>
+<circle cx="700" cy="90" r="22" fill="rgba(0,212,255,0.2)" stroke="var(--accent-blue)" stroke-width="2"/><text x="700" y="96" text-anchor="middle" fill="var(--accent-blue)" font-size="14" font-weight="700">A</text>
+<circle cx="800" cy="90" r="22" fill="rgba(0,212,255,0.2)" stroke="var(--accent-blue)" stroke-width="2"/><text x="800" y="96" text-anchor="middle" fill="var(--accent-blue)" font-size="14" font-weight="700">A</text>
+<!-- Red chairs (Blake) -->
+<circle cx="400" cy="350" r="22" fill="rgba(255,68,68,0.2)" stroke="var(--red)" stroke-width="2"/><text x="400" y="356" text-anchor="middle" fill="var(--red)" font-size="14" font-weight="700">B</text>
+<circle cx="600" cy="350" r="22" fill="rgba(255,68,68,0.2)" stroke="var(--red)" stroke-width="2"/><text x="600" y="356" text-anchor="middle" fill="var(--red)" font-size="14" font-weight="700">B</text>
+<circle cx="800" cy="350" r="22" fill="rgba(255,68,68,0.2)" stroke="var(--red)" stroke-width="2"/><text x="800" y="356" text-anchor="middle" fill="var(--red)" font-size="14" font-weight="700">B</text>
+<!-- Small blue suitcases -->
+<rect x="430" y="80" width="15" height="10" rx="2" fill="var(--accent-blue)" opacity="0.6"/><rect x="530" y="80" width="15" height="10" rx="2" fill="var(--accent-blue)" opacity="0.6"/><rect x="630" y="80" width="15" height="10" rx="2" fill="var(--accent-blue)" opacity="0.6"/><rect x="730" y="80" width="15" height="10" rx="2" fill="var(--accent-blue)" opacity="0.6"/><rect x="830" y="80" width="15" height="10" rx="2" fill="var(--accent-blue)" opacity="0.6"/>
+<!-- Large red suitcases -->
+<rect x="430" y="340" width="35" height="20" rx="4" fill="var(--red)" opacity="0.6"/><rect x="630" y="340" width="35" height="20" rx="4" fill="var(--red)" opacity="0.6"/><rect x="830" y="340" width="35" height="20" rx="4" fill="var(--red)" opacity="0.6"/>
+<!-- Labels -->
+<text x="180" y="225" text-anchor="middle" fill="var(--amber)" font-size="15">Batch = Table &#x2192;</text>
+<text x="600" y="55" text-anchor="middle" fill="var(--accent-blue)" font-size="15">Requests = Diners</text>
+<text x="1020" y="360" text-anchor="middle" fill="var(--red)" font-size="15">&#x2190; KV Cache = Luggage</text>
+</svg>
+<div class="callout green" style="font-size:0.9em;">Keep this picture in mind. We'll come back to it.</div>
+<aside class="notes">The metaphor for the whole talk. Batch is a restaurant table. Requests are diners. KV cache is each diner's luggage. When luggage fills the room, someone gets kicked out.</aside>
+</section>
+
+<!-- ============================================================ -->
+<!-- SLIDE 7: What Is a Token? -->
+<!-- ============================================================ -->
+<section>
+<h2>What Is a Token?</h2>
+<div class="split-layout">
+<div>
+<svg viewBox="0 0 550 220" width="100%">
+<text x="40" y="40" fill="var(--text-white)" font-size="24">"How are you?"</text>
+<line x1="160" y1="55" x2="160" y2="85" stroke="#888" stroke-width="2" marker-end="url(#arrowGray)"/>
+<defs><marker id="arrowGray" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#888"/></marker></defs>
+<rect x="30" y="100" width="100" height="45" rx="8" fill="rgba(0,212,255,0.15)" stroke="var(--accent-blue)" stroke-width="2"/><text x="80" y="128" text-anchor="middle" fill="var(--accent-blue)" font-size="18">"How"</text>
+<rect x="145" y="100" width="100" height="45" rx="8" fill="rgba(57,255,20,0.15)" stroke="var(--green)" stroke-width="2"/><text x="195" y="128" text-anchor="middle" fill="var(--green)" font-size="18">" are"</text>
+<rect x="260" y="100" width="100" height="45" rx="8" fill="rgba(184,119,217,0.15)" stroke="var(--purple)" stroke-width="2"/><text x="310" y="128" text-anchor="middle" fill="var(--purple)" font-size="18">" you"</text>
+<rect x="375" y="100" width="80" height="45" rx="8" fill="rgba(255,179,71,0.15)" stroke="var(--amber)" stroke-width="2"/><text x="415" y="128" text-anchor="middle" fill="var(--amber)" font-size="18">"?"</text>
+<text x="250" y="185" text-anchor="middle" fill="#888" font-size="14">4 tokens</text>
+</svg>
+</div>
+<div>
+<div class="metric-card" style="margin-bottom:0.5em;padding:0.8em;"><div class="number color-blue" style="font-size:1.8em;">&#xBE;</div><div class="label">of a word per token</div></div>
+<div class="metric-card" style="margin-bottom:0.5em;padding:0.8em;"><div class="number color-green" style="font-size:1.8em;">64</div><div class="label">tokens &#x2248; a tweet (Alex)</div></div>
+<div class="metric-card" style="padding:0.8em;"><div class="number color-red" style="font-size:1.8em;">4,000</div><div class="label">tokens &#x2248; 5-page report (Blake)</div></div>
+</div>
+</div>
+<div class="callout amber" style="font-size:0.9em;">Every token generated adds memory. Blake's 4,000 tokens = ~4GB of GPU memory.</div>
+<aside class="notes">A token is roughly three quarters of a word. 64 tokens is a tweet — that's Alex. 4,000 tokens is a five-page report — that's Blake. Every token adds memory.</aside>
+</section>
+
+<!-- ============================================================ -->
+<!-- SLIDE 8: Two Phases of Every Reply -->
+<!-- ============================================================ -->
+<section>
+<h2>Two Phases of Every Reply</h2>
+<svg viewBox="0 0 1400 380" width="100%" style="max-width:1400px;">
+<defs>
+<linearGradient id="prefillGrad" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="var(--accent-blue)" stop-opacity="0.3"/><stop offset="100%" stop-color="var(--accent-blue)" stop-opacity="0.1"/></linearGradient>
+<linearGradient id="decodeGrad" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="var(--purple)" stop-opacity="0.3"/><stop offset="100%" stop-color="var(--purple)" stop-opacity="0.1"/></linearGradient>
+</defs>
+<rect x="50" y="30" width="550" height="220" rx="20" fill="url(#prefillGrad)" stroke="var(--accent-blue)" stroke-width="2"/>
+<text x="325" y="70" text-anchor="middle" fill="var(--accent-blue)" font-size="26" font-weight="700">PREFILL</text>
+<text x="325" y="105" text-anchor="middle" fill="var(--text-white)" font-size="16">Read everything you sent</text>
+<text x="325" y="135" text-anchor="middle" fill="var(--text-white)" font-size="16">Happens once, up front</text>
+<text x="325" y="165" text-anchor="middle" fill="var(--text-white)" font-size="16">Compute-bound (GPU loves this)</text>
+<text x="325" y="210" text-anchor="middle" fill="var(--accent-blue)" font-size="40">&#x1F441;</text>
+<polygon points="630,140 680,140 680,120 720,150 680,180 680,160 630,160" fill="var(--purple)" opacity="0.5"/>
+<rect x="780" y="30" width="570" height="220" rx="20" fill="url(#decodeGrad)" stroke="var(--purple)" stroke-width="2"/>
+<text x="1065" y="70" text-anchor="middle" fill="var(--purple)" font-size="26" font-weight="700">DECODE</text>
+<text x="1065" y="105" text-anchor="middle" fill="var(--text-white)" font-size="16">Write the reply, one token at a time</text>
+<text x="1065" y="135" text-anchor="middle" fill="var(--text-white)" font-size="16">Happens N times</text>
+<text x="1065" y="165" text-anchor="middle" fill="var(--text-white)" font-size="16">Memory-bound (GPU waits for data)</text>
+<text x="1065" y="210" text-anchor="middle" fill="var(--purple)" font-size="22">tok tok tok ...</text>
+<!-- Timeline bar -->
+<rect x="50" y="290" width="550" height="40" rx="8" fill="rgba(0,212,255,0.15)" stroke="var(--accent-blue)" stroke-width="1"/>
+<text x="325" y="316" text-anchor="middle" fill="var(--accent-blue)" font-size="15" font-weight="600">TTFT = queue + prefill</text>
+<rect x="780" y="290" width="570" height="40" rx="8" fill="rgba(184,119,217,0.15)" stroke="var(--purple)" stroke-width="1"/>
+<text x="1065" y="316" text-anchor="middle" fill="var(--purple)" font-size="15" font-weight="600">ITL = gap between each decode step</text>
+</svg>
+<aside class="notes">Every LLM response has two phases. Prefill reads what you sent — fast, once. Decode writes the reply one token at a time — slower, hundreds of times. TTFT is Time To First Token. ITL is Inter-Token Latency. Remember ITL — that's where the ghost lives.</aside>
+</section>
+
+
+<!-- ============================================================ -->
+<!-- SLIDE 9: TTFT: Did They Get a Seat? -->
+<!-- ============================================================ -->
+<section>
+<h2 style="color:var(--accent-blue);">TTFT: Did They Get a Seat?</h2>
+<div style="text-align:center;margin:0.5em 0;">
+<span class="glow-text" style="color:var(--accent-blue);font-size:4em;font-weight:800;">TTFT</span><br/>
+<span style="font-size:1.1em;opacity:0.7;">Time to First Token</span>
+</div>
+<svg viewBox="0 0 1200 80" width="100%" style="max-width:1200px;display:block;margin:0 auto;">
+<rect x="50" y="20" width="300" height="40" rx="8" fill="rgba(255,255,255,0.1)" stroke="#666" stroke-width="1"/><text x="200" y="46" text-anchor="middle" fill="#aaa" font-size="15">Queue</text>
+<rect x="370" y="20" width="250" height="40" rx="8" fill="rgba(0,212,255,0.2)" stroke="var(--accent-blue)" stroke-width="2"/><text x="495" y="46" text-anchor="middle" fill="var(--accent-blue)" font-size="15">Prefill</text>
+<text x="660" y="46" fill="var(--green)" font-size="22">&#x1F3AF;</text>
+<text x="700" y="46" fill="var(--green)" font-size="15" font-weight="600">First Token!</text>
+</svg>
+<div class="code-box" style="text-align:center;font-size:0.9em;">TTFT = queue_time + prefill_time</div>
+<div class="split-layout" style="font-size:0.85em;">
+<div class="callout blue">&lt; 200ms &#x2192; User doesn't notice</div>
+<div class="callout red">&gt; 2 seconds &#x2192; User rage-clicks</div>
+</div>
+<aside class="notes">TTFT is the delay before the first word appears. Under 200ms, invisible. Over 2 seconds, they've already hit refresh.</aside>
+</section>
+
+<!-- ============================================================ -->
+<!-- SLIDE 10: ITL: How the Seat Feels -->
+<!-- ============================================================ -->
+<section>
+<h2 style="color:var(--amber);">ITL: How the Seat Feels</h2>
+<div style="text-align:center;margin:0.5em 0;">
+<span class="glow-text" style="color:var(--amber);font-size:4em;font-weight:800;">ITL</span><br/>
+<span style="font-size:1.1em;opacity:0.7;">Inter-Token Latency</span>
+</div>
+<svg viewBox="0 0 1200 160" width="100%" style="max-width:1200px;display:block;margin:0 auto;">
+<!-- Green row: smooth -->
+<text x="50" y="45" fill="var(--green)" font-size="14" font-weight="600">14ms — smooth streaming &#x2713;</text>
+<rect x="50" y="55" width="40" height="25" rx="4" fill="var(--green)"/><rect x="95" y="55" width="40" height="25" rx="4" fill="var(--green)"/><rect x="140" y="55" width="40" height="25" rx="4" fill="var(--green)"/><rect x="185" y="55" width="40" height="25" rx="4" fill="var(--green)"/><rect x="230" y="55" width="40" height="25" rx="4" fill="var(--green)"/><rect x="275" y="55" width="40" height="25" rx="4" fill="var(--green)"/><rect x="320" y="55" width="40" height="25" rx="4" fill="var(--green)"/><rect x="365" y="55" width="40" height="25" rx="4" fill="var(--green)"/><rect x="410" y="55" width="40" height="25" rx="4" fill="var(--green)"/><rect x="455" y="55" width="40" height="25" rx="4" fill="var(--green)"/><rect x="500" y="55" width="40" height="25" rx="4" fill="var(--green)"/><rect x="545" y="55" width="40" height="25" rx="4" fill="var(--green)"/>
+<!-- Red row: choppy -->
+<text x="50" y="115" fill="var(--red)" font-size="14" font-weight="600">45ms — choppy, laggy &#x2717;</text>
+<rect x="50" y="125" width="40" height="25" rx="4" fill="var(--red)"/><rect x="120" y="125" width="40" height="25" rx="4" fill="var(--red)"/><rect x="190" y="125" width="40" height="25" rx="4" fill="var(--red)"/><rect x="260" y="125" width="40" height="25" rx="4" fill="var(--red)"/><rect x="330" y="125" width="40" height="25" rx="4" fill="var(--red)"/><rect x="400" y="125" width="40" height="25" rx="4" fill="var(--red)"/><rect x="470" y="125" width="40" height="25" rx="4" fill="var(--red)"/><rect x="540" y="125" width="40" height="25" rx="4" fill="var(--red)"/>
+</svg>
+<div class="callout amber" style="font-size:1em;border-width:3px;font-weight:500;">ITL is <strong>THE</strong> noisy neighbour signal. It spikes when someone ELSE joins the batch.</div>
+<aside class="notes">ITL is the gap between each token during decode. 14ms feels instant. 45ms feels choppy. ITL spikes when someone else joins the batch. That's the noisy neighbour signal.</aside>
+</section>
+
+<!-- ============================================================ -->
+<!-- SLIDE 11: Why We Batch -->
+<!-- ============================================================ -->
+<section>
+<h2>Why We Batch</h2>
+<div class="split-layout">
+<div>
+<h3 style="color:var(--red);font-size:1.1em;">One Request on a GPU</h3>
+<svg viewBox="0 0 500 100" width="100%">
+<rect x="10" y="20" width="480" height="50" rx="8" fill="#1a1e3a" stroke="#555" stroke-width="1"/>
+<rect x="12" y="22" width="48" height="46" rx="6" fill="rgba(255,68,68,0.4)"/>
+<text x="250" y="52" text-anchor="middle" fill="var(--red)" font-size="16" font-weight="600">~10% utilization</text>
+</svg>
+<p style="font-size:0.85em;opacity:0.7;">You pay for 100%.</p>
+</div>
+<div>
+<h3 style="color:var(--green);font-size:1.1em;">Eight Requests Batched</h3>
+<svg viewBox="0 0 500 100" width="100%">
+<rect x="10" y="20" width="480" height="50" rx="8" fill="#1a1e3a" stroke="#555" stroke-width="1"/>
+<rect x="12" y="22" width="38" height="46" rx="4" fill="rgba(0,212,255,0.5)"/><rect x="52" y="22" width="38" height="46" rx="4" fill="rgba(57,255,20,0.5)"/><rect x="92" y="22" width="38" height="46" rx="4" fill="rgba(184,119,217,0.5)"/><rect x="132" y="22" width="38" height="46" rx="4" fill="rgba(255,179,71,0.5)"/><rect x="172" y="22" width="38" height="46" rx="4" fill="rgba(0,212,255,0.5)"/><rect x="212" y="22" width="38" height="46" rx="4" fill="rgba(57,255,20,0.5)"/><rect x="252" y="22" width="38" height="46" rx="4" fill="rgba(184,119,217,0.5)"/><rect x="292" y="22" width="38" height="46" rx="4" fill="rgba(255,179,71,0.5)"/>
+<text x="400" y="52" text-anchor="middle" fill="var(--green)" font-size="16" font-weight="600">~65%</text>
+</svg>
+<p style="font-size:0.85em;opacity:0.7;">Same card, 8x the work.</p>
+</div>
+</div>
+<div class="callout green" style="font-size:0.9em;">Batching turns memory-bound decode into compute-bound decode. That's why every LLM server does it.</div>
+<aside class="notes">A GPU running one request is 10% utilized. Batch eight together — 65%. Same card, eight times the work. This is why batching exists.</aside>
+</section>
+
+<!-- ============================================================ -->
+<!-- SLIDE 12: Static Batching: The Old Way -->
+<!-- ============================================================ -->
+<section>
+<h2>Static Batching: The Old Way</h2>
+<p style="color:var(--amber);font-size:0.85em;margin-bottom:0.5em;">Lock the table until everyone finishes</p>
+<svg viewBox="0 0 1400 350" width="100%" style="max-width:1400px;">
+<text x="30" y="50" fill="var(--accent-blue)" font-size="14">Req 1</text>
+<rect x="100" y="30" width="250" height="35" rx="6" fill="rgba(0,212,255,0.3)" stroke="var(--accent-blue)" stroke-width="1.5"/>
+<rect x="350" y="30" width="850" height="35" rx="6" fill="rgba(255,255,255,0.05)" stroke="#444" stroke-width="1" stroke-dasharray="4,4"/><text x="775" y="53" text-anchor="middle" fill="#666" font-size="12">IDLE</text>
+
+<text x="30" y="100" fill="var(--purple)" font-size="14">Req 2</text>
+<rect x="100" y="80" width="500" height="35" rx="6" fill="rgba(184,119,217,0.3)" stroke="var(--purple)" stroke-width="1.5"/>
+<rect x="600" y="80" width="600" height="35" rx="6" fill="rgba(255,255,255,0.05)" stroke="#444" stroke-width="1" stroke-dasharray="4,4"/><text x="900" y="103" text-anchor="middle" fill="#666" font-size="12">IDLE</text>
+
+<text x="30" y="150" fill="var(--green)" font-size="14">Req 3</text>
+<rect x="100" y="130" width="200" height="35" rx="6" fill="rgba(57,255,20,0.3)" stroke="var(--green)" stroke-width="1.5"/>
+<rect x="300" y="130" width="900" height="35" rx="6" fill="rgba(255,255,255,0.05)" stroke="#444" stroke-width="1" stroke-dasharray="4,4"/><text x="750" y="153" text-anchor="middle" fill="#666" font-size="12">IDLE</text>
+
+<text x="30" y="200" fill="var(--red)" font-size="14">Req 4</text>
+<rect x="100" y="180" width="1100" height="35" rx="6" fill="rgba(255,68,68,0.3)" stroke="var(--red)" stroke-width="1.5"/>
+<text x="650" y="203" text-anchor="middle" fill="var(--red)" font-size="13" font-weight="600">Everyone waits for me</text>
+
+<rect class="fragment" x="100" y="250" width="200" height="50" rx="10" fill="rgba(255,68,68,0.15)" stroke="var(--red)" stroke-width="2"/><text x="200" y="282" text-anchor="middle" fill="var(--red)" font-size="20" font-weight="700">65% wasted</text>
+</svg>
+<aside class="notes">Static batching locks four requests together. Short ones finish, sit idle. Everything waits for the longest. 65% wasted.</aside>
+</section>
+
+<!-- ============================================================ -->
+<!-- SLIDE 13: Continuous Batching: The Fix -->
+<!-- ============================================================ -->
+<section>
+<h2>Continuous Batching: The Fix</h2>
+<p style="color:var(--green);font-size:0.85em;margin-bottom:0.5em;">Look again after every single step</p>
+<svg viewBox="0 0 1400 380" width="100%" style="max-width:1400px;">
+<!-- Step 1 -->
+<text x="30" y="25" fill="#888" font-size="13">Step 1</text>
+<rect x="100" y="10" width="200" height="30" rx="5" fill="rgba(0,212,255,0.3)" stroke="var(--accent-blue)" stroke-width="1.5"/><text x="200" y="30" text-anchor="middle" fill="var(--accent-blue)" font-size="12">Req 1</text>
+<rect x="100" y="45" width="200" height="30" rx="5" fill="rgba(184,119,217,0.3)" stroke="var(--purple)" stroke-width="1.5"/><text x="200" y="65" text-anchor="middle" fill="var(--purple)" font-size="12">Req 2</text>
+<rect x="100" y="80" width="200" height="30" rx="5" fill="rgba(57,255,20,0.3)" stroke="var(--green)" stroke-width="1.5"/><text x="200" y="100" text-anchor="middle" fill="var(--green)" font-size="12">Req 3</text>
+<!-- Step 5 -->
+<g class="fragment">
+<text x="380" y="25" fill="#888" font-size="13">Step 5</text>
+<rect x="450" y="10" width="200" height="30" rx="5" fill="rgba(0,212,255,0.3)" stroke="var(--accent-blue)" stroke-width="1.5"/><text x="550" y="30" text-anchor="middle" fill="var(--accent-blue)" font-size="12">Req 1</text>
+<rect x="450" y="45" width="200" height="30" rx="5" fill="rgba(184,119,217,0.3)" stroke="var(--purple)" stroke-width="1.5"/><text x="550" y="65" text-anchor="middle" fill="var(--purple)" font-size="12">Req 2</text>
+<rect x="450" y="80" width="200" height="30" rx="5" fill="rgba(255,179,71,0.3)" stroke="var(--green)" stroke-width="2"/><text x="550" y="100" text-anchor="middle" fill="var(--green)" font-size="12" font-weight="700">Req 4 NEW!</text>
+<text x="450" y="125" fill="#666" font-size="11">Req 3 done &#x2192; slot filled</text>
+</g>
+<!-- Step 8 -->
+<g class="fragment">
+<text x="730" y="25" fill="#888" font-size="13">Step 8</text>
+<rect x="800" y="10" width="200" height="30" rx="5" fill="rgba(57,255,20,0.3)" stroke="var(--green)" stroke-width="2"/><text x="900" y="30" text-anchor="middle" fill="var(--green)" font-size="12" font-weight="700">Req 5 NEW!</text>
+<rect x="800" y="45" width="200" height="30" rx="5" fill="rgba(184,119,217,0.3)" stroke="var(--purple)" stroke-width="1.5"/><text x="900" y="65" text-anchor="middle" fill="var(--purple)" font-size="12">Req 2</text>
+<rect x="800" y="80" width="200" height="30" rx="5" fill="rgba(255,179,71,0.3)" stroke="var(--amber)" stroke-width="1.5"/><text x="900" y="100" text-anchor="middle" fill="var(--amber)" font-size="12">Req 4</text>
+<text x="800" y="125" fill="#666" font-size="11">Req 1 done &#x2192; slot filled</text>
+</g>
+<!-- Stats -->
+<g class="fragment">
+<rect x="100" y="170" width="350" height="50" rx="10" fill="rgba(57,255,20,0.1)" stroke="var(--green)" stroke-width="2"/>
+<text x="275" y="202" text-anchor="middle" fill="var(--green)" font-size="18" font-weight="600">&lt;5% wasted · 36x throughput (Orca, 2022)</text>
+</g>
+</svg>
+<div class="callout red fragment" style="font-size:0.9em;">But now they share a step. One long guest sets the pace for the table.</div>
+<aside class="notes">Continuous batching checks after every step. Slot opens? Fill it immediately. 36x throughput. But now every request shares every step. One long request sets the pace for everyone.</aside>
+</section>
+
+
+<!-- ============================================================ -->
+<!-- SLIDE 14: The Scheduler Decides -->
+<!-- ============================================================ -->
+<section>
+<h2>The Scheduler Decides</h2>
+<svg viewBox="0 0 1200 320" width="100%" style="max-width:1200px;display:block;margin:0.5em auto;">
+<defs><marker id="arrowB" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto"><polygon points="0 0,10 3.5,0 7" fill="var(--accent-blue)"/></marker><marker id="arrowG" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto"><polygon points="0 0,10 3.5,0 7" fill="var(--green)"/></marker><marker id="arrowA" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto"><polygon points="0 0,10 3.5,0 7" fill="var(--amber)"/></marker><marker id="arrowP" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto"><polygon points="0 0,10 3.5,0 7" fill="var(--purple)"/></marker></defs>
+<!-- New request -->
+<rect x="30" y="110" width="200" height="60" rx="12" fill="rgba(0,212,255,0.15)" stroke="var(--accent-blue)" stroke-width="2"/><text x="130" y="145" text-anchor="middle" fill="var(--accent-blue)" font-size="16" font-weight="600">New request arrives</text>
+<line x1="230" y1="140" x2="310" y2="140" stroke="var(--accent-blue)" stroke-width="2" marker-end="url(#arrowB)"/>
+<!-- Diamond: KV available? -->
+<polygon points="420,100 520,140 420,180 320,140" fill="rgba(255,179,71,0.1)" stroke="var(--amber)" stroke-width="2"/><text x="420" y="136" text-anchor="middle" fill="var(--amber)" font-size="13" font-weight="600">KV cache</text><text x="420" y="153" text-anchor="middle" fill="var(--amber)" font-size="13" font-weight="600">available?</text>
+<!-- Yes path -->
+<text x="540" y="108" fill="var(--green)" font-size="13" font-weight="700">Yes</text>
+<line x1="520" y1="120" x2="600" y2="80" stroke="var(--green)" stroke-width="2" marker-end="url(#arrowG)"/>
+<rect x="600" y="55" width="180" height="50" rx="10" fill="rgba(57,255,20,0.15)" stroke="var(--green)" stroke-width="2"/><text x="690" y="85" text-anchor="middle" fill="var(--green)" font-size="15" font-weight="600">Add to batch</text>
+<!-- No path -->
+<text x="540" y="175" fill="var(--amber)" font-size="13" font-weight="700">No</text>
+<line x1="520" y1="160" x2="600" y2="190" stroke="var(--amber)" stroke-width="2" marker-end="url(#arrowA)"/>
+<!-- Diamond: Can preempt? -->
+<polygon points="720,160 820,200 720,240 620,200" fill="rgba(255,179,71,0.1)" stroke="var(--amber)" stroke-width="2"/><text x="720" y="196" text-anchor="middle" fill="var(--amber)" font-size="13" font-weight="600">Can</text><text x="720" y="213" text-anchor="middle" fill="var(--amber)" font-size="13" font-weight="600">preempt?</text>
+<!-- Yes: Evict -->
+<text x="840" y="165" fill="var(--red)" font-size="13" font-weight="700">Yes</text>
+<line x1="820" y1="180" x2="890" y2="160" stroke="var(--red)" stroke-width="2" marker-end="url(#arrowRed)"/>
+<rect x="890" y="135" width="220" height="50" rx="10" fill="rgba(255,68,68,0.15)" stroke="var(--red)" stroke-width="2"/><text x="1000" y="165" text-anchor="middle" fill="var(--red)" font-size="15" font-weight="600">Evict lowest priority</text>
+<!-- No: Queue -->
+<text x="840" y="240" fill="var(--purple)" font-size="13" font-weight="700">No</text>
+<line x1="820" y1="220" x2="890" y2="240" stroke="var(--purple)" stroke-width="2" marker-end="url(#arrowP)"/>
+<rect x="890" y="215" width="180" height="50" rx="10" fill="rgba(184,119,217,0.15)" stroke="var(--purple)" stroke-width="2"/><text x="980" y="245" text-anchor="middle" fill="var(--purple)" font-size="15" font-weight="600">Queue it</text>
+</svg>
+<div class="code-box" style="font-size:1em;text-align:center;">--max-num-seqs 256  # default — who thought this was a good idea?</div>
+<aside class="notes">The scheduler decides who sits at the table. The default max-num-seqs is 256 — 256 requests sharing one GPU step. Who thought that was a good idea?</aside>
+</section>
+
+<!-- ============================================================ -->
+<!-- SLIDE 15: Meet Alex and Blake -->
+<!-- ============================================================ -->
+<section>
+<h2>Meet Alex and Blake</h2>
+<div class="split-layout" style="font-size:0.85em;">
+<div class="metric-card" style="border-color:rgba(0,212,255,0.4);border-width:3px;">
+<div style="text-align:center;">
+<svg viewBox="0 0 80 80" width="80" height="80"><circle cx="40" cy="40" r="35" fill="rgba(0,212,255,0.15)" stroke="var(--accent-blue)" stroke-width="3"/><circle cx="28" cy="32" r="4" fill="white"/><circle cx="52" cy="32" r="4" fill="white"/><path d="M25 50 Q40 65 55 50" fill="none" stroke="white" stroke-width="3" stroke-linecap="round"/></svg>
+</div>
+<h3 style="color:var(--accent-blue);text-align:center;font-size:1.5em;margin:0.3em 0;">ALEX</h3>
+<p style="text-align:center;opacity:0.7;font-size:0.9em;">The Short Request</p>
+<ul style="font-size:0.9em;list-style:none;padding-left:0;">
+<li>&#x1F4AC; "Summarise this Jira ticket"</li>
+<li>&#x1F4CF; Wants ~64 tokens</li>
+<li>&#x26A1; Quick question</li>
+</ul>
+<div class="callout blue" style="font-size:0.85em;">This is the person who will complain.</div>
+</div>
+<div class="metric-card" style="border-color:rgba(255,68,68,0.4);border-width:3px;">
+<div style="text-align:center;">
+<svg viewBox="0 0 80 80" width="80" height="80"><circle cx="40" cy="40" r="35" fill="rgba(255,68,68,0.15)" stroke="var(--red)" stroke-width="3"/><circle cx="28" cy="32" r="4" fill="white"/><circle cx="52" cy="32" r="4" fill="white"/><line x1="25" y1="55" x2="55" y2="55" stroke="white" stroke-width="3" stroke-linecap="round"/><line x1="65" y1="20" x2="75" y2="15" stroke="var(--red)" stroke-width="2"/><line x1="65" y1="25" x2="78" y2="25" stroke="var(--red)" stroke-width="2"/><line x1="65" y1="30" x2="75" y2="35" stroke="var(--red)" stroke-width="2"/></svg>
+</div>
+<h3 style="color:var(--red);text-align:center;font-size:1.5em;margin:0.3em 0;">BLAKE</h3>
+<p style="text-align:center;opacity:0.7;font-size:0.9em;">The Noisy Neighbour</p>
+<ul style="font-size:0.9em;list-style:none;padding-left:0;">
+<li>&#x1F4CA; "Write a comprehensive capacity report"</li>
+<li>&#x1F4CF; Wants ~4,000 tokens</li>
+<li>&#x1F517; Same pool, same GPU, same batch</li>
+</ul>
+<div class="callout red" style="font-size:0.85em;">Blake is about to ruin Alex's day.</div>
+</div>
+</div>
+<aside class="notes">Meet Alex and Blake. Alex wants 64 tokens. Blake wants 4,000. They share the same GPU. Alex is about to have a very bad time.</aside>
+</section>
+
+<!-- ============================================================ -->
+<!-- SLIDE 16: KV Cache: The Luggage at the Table -->
+<!-- ============================================================ -->
+<section>
+<h2>KV Cache: The Luggage at the Table</h2>
+<svg viewBox="0 0 1400 120" width="100%" style="max-width:1400px;">
+<text x="30" y="25" fill="#888" font-size="14">GPU Memory</text>
+<rect x="30" y="35" width="1340" height="60" rx="10" fill="#1a1e3a" stroke="#555" stroke-width="1"/>
+<!-- Alex blocks (small, blue) -->
+<rect x="40" y="42" width="60" height="46" rx="4" fill="rgba(0,212,255,0.4)" stroke="var(--accent-blue)" stroke-width="1"/><text x="70" y="70" text-anchor="middle" fill="var(--accent-blue)" font-size="11">A</text>
+<rect x="108" y="42" width="60" height="46" rx="4" fill="rgba(0,212,255,0.4)" stroke="var(--accent-blue)" stroke-width="1"/><text x="138" y="70" text-anchor="middle" fill="var(--accent-blue)" font-size="11">A</text>
+<rect x="176" y="42" width="60" height="46" rx="4" fill="rgba(0,212,255,0.4)" stroke="var(--accent-blue)" stroke-width="1"/><text x="206" y="70" text-anchor="middle" fill="var(--accent-blue)" font-size="11">A</text>
+<!-- Blake blocks (large, red) — fragment -->
+<g class="fragment">
+<rect x="260" y="42" width="160" height="46" rx="4" fill="rgba(255,68,68,0.4)" stroke="var(--red)" stroke-width="1.5"/><text x="340" y="70" text-anchor="middle" fill="var(--red)" font-size="11">Blake</text>
+<rect x="428" y="42" width="160" height="46" rx="4" fill="rgba(255,68,68,0.4)" stroke="var(--red)" stroke-width="1.5"/><text x="508" y="70" text-anchor="middle" fill="var(--red)" font-size="11">Blake</text>
+<rect x="596" y="42" width="160" height="46" rx="4" fill="rgba(255,68,68,0.4)" stroke="var(--red)" stroke-width="1.5"/><text x="676" y="70" text-anchor="middle" fill="var(--red)" font-size="11">Blake</text>
+<rect x="764" y="42" width="160" height="46" rx="4" fill="rgba(255,68,68,0.4)" stroke="var(--red)" stroke-width="1.5"/><text x="844" y="70" text-anchor="middle" fill="var(--red)" font-size="11">Blake</text>
+<rect x="932" y="42" width="160" height="46" rx="4" fill="rgba(255,68,68,0.4)" stroke="var(--red)" stroke-width="1.5"/><text x="1012" y="70" text-anchor="middle" fill="var(--red)" font-size="11">Blake</text>
+<rect x="1100" y="42" width="160" height="46" rx="4" fill="rgba(255,68,68,0.4)" stroke="var(--red)" stroke-width="1.5"/><text x="1180" y="70" text-anchor="middle" fill="var(--red)" font-size="11">Blake</text>
+<text x="750" y="25" fill="var(--red)" font-size="14" font-weight="600">4,000 tokens = 4GB</text>
+</g>
+</svg>
+<div class="callout red fragment" style="font-size:1em;">&#x26A0;&#xFE0F; When luggage fills the table... someone gets evicted.</div>
+<div class="fragment">
+<svg viewBox="0 0 1400 100" width="100%" style="max-width:1400px;">
+<rect x="30" y="15" width="1340" height="60" rx="10" fill="#1a1e3a" stroke="var(--red)" stroke-width="2"/>
+<rect x="40" y="22" width="1200" height="46" rx="4" fill="rgba(255,68,68,0.3)"/>
+<text x="640" y="50" text-anchor="middle" fill="var(--red)" font-size="18" font-weight="700">MEMORY FULL</text>
+<rect x="1250" y="22" width="60" height="46" rx="4" fill="rgba(0,212,255,0.4)" stroke="var(--accent-blue)" stroke-width="2"/>
+<text x="1280" y="50" text-anchor="middle" fill="var(--accent-blue)" font-size="11">A</text>
+<text x="1330" y="50" fill="var(--red)" font-size="22" font-weight="900">&#x2192;</text>
+<text x="1370" y="55" fill="var(--red)" font-size="14">OUT!</text>
+</svg>
+</div>
+<aside class="notes">KV cache is the memory of what's been said. Blake's 4,000 tokens — four gigabytes. When the cache fills, someone gets kicked out.</aside>
+</section>
+
+<!-- ============================================================ -->
+<!-- SLIDE 17: Step 1: Alex Alone at the Table -->
+<!-- ============================================================ -->
+<section>
+<p class="slide-label">WALKTHROUGH · STEP 1 OF 4</p>
+<h2>Alex Alone at the Table</h2>
+<div class="split-layout">
+<div>
+<svg viewBox="0 0 550 380" width="100%">
+<rect x="100" y="100" width="350" height="200" rx="30" fill="#1a1e3a" stroke="#555" stroke-width="2"/>
+<text x="275" y="210" text-anchor="middle" fill="#444" font-size="14">TABLE</text>
+<!-- Chair positions -->
+<circle cx="175" cy="70" r="22" fill="rgba(0,212,255,0.2)" stroke="var(--accent-blue)" stroke-width="2.5"/><text x="175" y="76" text-anchor="middle" fill="var(--accent-blue)" font-size="14" font-weight="700">A</text>
+<rect x="200" y="62" width="14" height="9" rx="2" fill="var(--accent-blue)" opacity="0.5"/>
+<!-- Empty chairs -->
+<circle cx="275" cy="70" r="22" fill="none" stroke="#444" stroke-width="1" stroke-dasharray="4,4"/>
+<circle cx="375" cy="70" r="22" fill="none" stroke="#444" stroke-width="1" stroke-dasharray="4,4"/>
+<circle cx="475" cy="135" r="22" fill="none" stroke="#444" stroke-width="1" stroke-dasharray="4,4"/>
+<circle cx="475" cy="265" r="22" fill="none" stroke="#444" stroke-width="1" stroke-dasharray="4,4"/>
+<circle cx="375" cy="330" r="22" fill="none" stroke="#444" stroke-width="1" stroke-dasharray="4,4"/>
+<circle cx="275" cy="330" r="22" fill="none" stroke="#444" stroke-width="1" stroke-dasharray="4,4"/>
+<circle cx="75" cy="200" r="22" fill="none" stroke="#444" stroke-width="1" stroke-dasharray="4,4"/>
+</svg>
+</div>
+<div>
+<div class="metric-card" style="margin-bottom:0.6em;padding:0.7em 1em;border-color:rgba(57,255,20,0.3);"><span style="opacity:0.7;font-size:0.8em;">TTFT</span><span class="number color-green" style="font-size:1.8em;float:right;">82ms</span></div>
+<div class="metric-card" style="margin-bottom:0.6em;padding:0.7em 1em;border-color:rgba(57,255,20,0.3);"><span style="opacity:0.7;font-size:0.8em;">ITL</span><span class="number color-green" style="font-size:1.8em;float:right;">14ms</span></div>
+<div class="metric-card" style="margin-bottom:0.6em;padding:0.7em 1em;border-color:rgba(57,255,20,0.3);"><span style="opacity:0.7;font-size:0.8em;">KV Cache</span><span class="number color-green" style="font-size:1.8em;float:right;">8%</span></div>
+<div class="metric-card" style="padding:0.7em 1em;border-color:rgba(57,255,20,0.3);"><span style="opacity:0.7;font-size:0.8em;">Batch</span><span class="number color-green" style="font-size:1.8em;float:right;">1</span></div>
+</div>
+</div>
+<div class="callout green" style="font-size:0.9em;">Quiet restaurant. Fast service. Life is good.</div>
+<aside class="notes">Alex alone at the table. TTFT 82ms, ITL 14ms, KV cache 8%. Life is good.</aside>
+</section>
+
+<!-- ============================================================ -->
+<!-- SLIDE 18: Step 2: Four More Alexes -->
+<!-- ============================================================ -->
+<section>
+<p class="slide-label">WALKTHROUGH · STEP 2 OF 4</p>
+<h2>Four More Alexes Join</h2>
+<div class="split-layout">
+<div>
+<svg viewBox="0 0 550 380" width="100%">
+<rect x="100" y="100" width="350" height="200" rx="30" fill="#1a1e3a" stroke="#555" stroke-width="2"/>
+<text x="275" y="210" text-anchor="middle" fill="#444" font-size="14">TABLE</text>
+<!-- 5 blue chairs -->
+<circle cx="175" cy="70" r="22" fill="rgba(0,212,255,0.2)" stroke="var(--accent-blue)" stroke-width="2.5"/><text x="175" y="76" text-anchor="middle" fill="var(--accent-blue)" font-size="14" font-weight="700">A</text><rect x="200" y="62" width="14" height="9" rx="2" fill="var(--accent-blue)" opacity="0.5"/>
+<circle cx="275" cy="70" r="22" fill="rgba(0,212,255,0.2)" stroke="var(--accent-blue)" stroke-width="2.5"/><text x="275" y="76" text-anchor="middle" fill="var(--accent-blue)" font-size="14" font-weight="700">A</text><rect x="300" y="62" width="14" height="9" rx="2" fill="var(--accent-blue)" opacity="0.5"/>
+<circle cx="375" cy="70" r="22" fill="rgba(0,212,255,0.2)" stroke="var(--accent-blue)" stroke-width="2.5"/><text x="375" y="76" text-anchor="middle" fill="var(--accent-blue)" font-size="14" font-weight="700">A</text><rect x="400" y="62" width="14" height="9" rx="2" fill="var(--accent-blue)" opacity="0.5"/>
+<circle cx="475" cy="135" r="22" fill="rgba(0,212,255,0.2)" stroke="var(--accent-blue)" stroke-width="2.5"/><text x="475" y="141" text-anchor="middle" fill="var(--accent-blue)" font-size="14" font-weight="700">A</text><rect x="500" y="127" width="14" height="9" rx="2" fill="var(--accent-blue)" opacity="0.5"/>
+<circle cx="475" cy="265" r="22" fill="rgba(0,212,255,0.2)" stroke="var(--accent-blue)" stroke-width="2.5"/><text x="475" y="271" text-anchor="middle" fill="var(--accent-blue)" font-size="14" font-weight="700">A</text><rect x="500" y="257" width="14" height="9" rx="2" fill="var(--accent-blue)" opacity="0.5"/>
+<!-- Empty chairs -->
+<circle cx="375" cy="330" r="22" fill="none" stroke="#444" stroke-width="1" stroke-dasharray="4,4"/>
+<circle cx="275" cy="330" r="22" fill="none" stroke="#444" stroke-width="1" stroke-dasharray="4,4"/>
+<circle cx="75" cy="200" r="22" fill="none" stroke="#444" stroke-width="1" stroke-dasharray="4,4"/>
+</svg>
+</div>
+<div>
+<div class="metric-card" style="margin-bottom:0.6em;padding:0.7em 1em;border-color:rgba(57,255,20,0.3);"><span style="opacity:0.7;font-size:0.8em;">TTFT</span><span class="number color-green" style="font-size:1.8em;float:right;">85ms</span></div>
+<div class="metric-card" style="margin-bottom:0.6em;padding:0.7em 1em;border-color:rgba(57,255,20,0.3);"><span style="opacity:0.7;font-size:0.8em;">ITL</span><span class="number color-green" style="font-size:1.8em;float:right;">15ms</span></div>
+<div class="metric-card" style="margin-bottom:0.6em;padding:0.7em 1em;border-color:rgba(57,255,20,0.3);"><span style="opacity:0.7;font-size:0.8em;">KV Cache</span><span class="number color-green" style="font-size:1.8em;float:right;">18%</span></div>
+<div class="metric-card" style="padding:0.7em 1em;border-color:rgba(57,255,20,0.3);"><span style="opacity:0.7;font-size:0.8em;">Batch</span><span class="number color-green" style="font-size:1.8em;float:right;">5</span></div>
+</div>
+</div>
+<div class="callout green" style="font-size:0.9em;">Five Alexes. Still fine. The GPU barely notices.</div>
+<aside class="notes">Four more Alexes. Metrics barely move. Five short requests is a light load.</aside>
+</section>
+
+
+<!-- ============================================================ -->
+<!-- SLIDE 19: Step 3: Blake Joins -->
+<!-- ============================================================ -->
+<section>
+<p class="slide-label">WALKTHROUGH · STEP 3 OF 4</p>
+<h2>Blake Joins the Table</h2>
+<div class="split-layout">
+<div>
+<svg viewBox="0 0 550 380" width="100%">
+<defs><filter id="glowR"><feGaussianBlur stdDeviation="6" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs>
+<rect x="100" y="100" width="350" height="200" rx="30" fill="#1a1e3a" stroke="#555" stroke-width="2"/>
+<text x="275" y="210" text-anchor="middle" fill="#444" font-size="14">TABLE</text>
+<!-- 5 blue chairs -->
+<circle cx="175" cy="70" r="22" fill="rgba(0,212,255,0.2)" stroke="var(--accent-blue)" stroke-width="2.5"/><text x="175" y="76" text-anchor="middle" fill="var(--accent-blue)" font-size="14" font-weight="700">A</text><rect x="200" y="62" width="14" height="9" rx="2" fill="var(--accent-blue)" opacity="0.5"/>
+<circle cx="275" cy="70" r="22" fill="rgba(0,212,255,0.2)" stroke="var(--accent-blue)" stroke-width="2.5"/><text x="275" y="76" text-anchor="middle" fill="var(--accent-blue)" font-size="14" font-weight="700">A</text><rect x="300" y="62" width="14" height="9" rx="2" fill="var(--accent-blue)" opacity="0.5"/>
+<circle cx="375" cy="70" r="22" fill="rgba(0,212,255,0.2)" stroke="var(--accent-blue)" stroke-width="2.5"/><text x="375" y="76" text-anchor="middle" fill="var(--accent-blue)" font-size="14" font-weight="700">A</text><rect x="400" y="62" width="14" height="9" rx="2" fill="var(--accent-blue)" opacity="0.5"/>
+<circle cx="475" cy="135" r="22" fill="rgba(0,212,255,0.2)" stroke="var(--accent-blue)" stroke-width="2.5"/><text x="475" y="141" text-anchor="middle" fill="var(--accent-blue)" font-size="14" font-weight="700">A</text><rect x="500" y="127" width="14" height="9" rx="2" fill="var(--accent-blue)" opacity="0.5"/>
+<circle cx="475" cy="265" r="22" fill="rgba(0,212,255,0.2)" stroke="var(--accent-blue)" stroke-width="2.5"/><text x="475" y="271" text-anchor="middle" fill="var(--accent-blue)" font-size="14" font-weight="700">A</text><rect x="500" y="257" width="14" height="9" rx="2" fill="var(--accent-blue)" opacity="0.5"/>
+<!-- 1 RED chair with glow -->
+<circle cx="275" cy="330" r="26" fill="rgba(255,68,68,0.2)" stroke="var(--red)" stroke-width="3" filter="url(#glowR)"/><text x="275" y="336" text-anchor="middle" fill="var(--red)" font-size="16" font-weight="700">B</text>
+<!-- Large red suitcases -->
+<rect x="305" y="318" width="35" height="18" rx="4" fill="var(--red)" opacity="0.5"/><rect x="345" y="318" width="35" height="18" rx="4" fill="var(--red)" opacity="0.5"/><rect x="385" y="318" width="35" height="18" rx="4" fill="var(--red)" opacity="0.5"/>
+<!-- Empty chairs -->
+<circle cx="375" cy="330" r="22" fill="none" stroke="#444" stroke-width="1" stroke-dasharray="4,4" opacity="0"/>
+<circle cx="75" cy="200" r="22" fill="none" stroke="#444" stroke-width="1" stroke-dasharray="4,4"/>
+</svg>
+</div>
+<div>
+<div class="metric-card fragment" style="margin-bottom:0.6em;padding:0.7em 1em;border-color:rgba(255,179,71,0.3);"><span style="opacity:0.7;font-size:0.8em;">TTFT</span><span class="number color-amber" style="font-size:1.5em;float:right;">85 &#x2192; 180ms</span></div>
+<div class="metric-card fragment" style="margin-bottom:0.6em;padding:0.7em 1em;border-color:rgba(255,179,71,0.3);"><span style="opacity:0.7;font-size:0.8em;">ITL</span><span class="number color-amber" style="font-size:1.5em;float:right;">15 &#x2192; 32ms</span></div>
+<div class="metric-card fragment" style="margin-bottom:0.6em;padding:0.7em 1em;border-color:rgba(255,179,71,0.3);"><span style="opacity:0.7;font-size:0.8em;">KV Cache</span><span class="number color-amber" style="font-size:1.5em;float:right;">18 &#x2192; 55%</span></div>
+<div class="metric-card fragment" style="padding:0.7em 1em;border-color:rgba(255,179,71,0.3);"><span style="opacity:0.7;font-size:0.8em;">Batch</span><span class="number color-amber" style="font-size:1.8em;float:right;">6</span></div>
+</div>
+</div>
+<div class="callout amber fragment" style="font-size:0.9em;"><strong>One Blake.</strong> The experience changed for all five Alexes.</div>
+<aside class="notes">One Blake joins. Just one. TTFT climbs to 180. ITL doubles. KV cache more than doubles. One request changed the experience for everyone.</aside>
+</section>
+
+<!-- ============================================================ -->
+<!-- SLIDE 20: Step 4: The Squeeze -->
+<!-- ============================================================ -->
+<section>
+<p class="slide-label">WALKTHROUGH · STEP 4 OF 4</p>
+<h2>Two More Blakes: The Squeeze</h2>
+<div class="split-layout">
+<div>
+<svg viewBox="0 0 550 380" width="100%">
+<rect x="100" y="100" width="350" height="200" rx="30" fill="#1a1e3a" stroke="var(--red)" stroke-width="2" opacity="0.8"/>
+<text x="275" y="210" text-anchor="middle" fill="#555" font-size="14">TABLE</text>
+<!-- 5 blue chairs, one with X -->
+<circle cx="175" cy="70" r="22" fill="rgba(0,212,255,0.2)" stroke="var(--accent-blue)" stroke-width="2.5"/><text x="175" y="76" text-anchor="middle" fill="var(--accent-blue)" font-size="14" font-weight="700">A</text>
+<circle cx="275" cy="70" r="22" fill="rgba(0,212,255,0.2)" stroke="var(--accent-blue)" stroke-width="2.5"/><text x="275" y="76" text-anchor="middle" fill="var(--accent-blue)" font-size="14" font-weight="700">A</text>
+<circle cx="375" cy="70" r="22" fill="rgba(0,212,255,0.2)" stroke="var(--accent-blue)" stroke-width="2.5"/><text x="375" y="76" text-anchor="middle" fill="var(--accent-blue)" font-size="14" font-weight="700">A</text>
+<circle cx="475" cy="135" r="22" fill="rgba(0,212,255,0.2)" stroke="var(--accent-blue)" stroke-width="2.5"/><text x="475" y="141" text-anchor="middle" fill="var(--accent-blue)" font-size="14" font-weight="700">A</text>
+<!-- Preempted Alex -->
+<circle cx="475" cy="265" r="22" fill="rgba(0,212,255,0.1)" stroke="var(--accent-blue)" stroke-width="1" opacity="0.4"/><text x="475" y="271" text-anchor="middle" fill="var(--accent-blue)" font-size="14" opacity="0.4">A</text>
+<line x1="458" y1="248" x2="492" y2="282" stroke="var(--red)" stroke-width="3"/><line x1="492" y1="248" x2="458" y2="282" stroke="var(--red)" stroke-width="3"/>
+<!-- 3 RED chairs with glow -->
+<circle cx="275" cy="330" r="26" fill="rgba(255,68,68,0.2)" stroke="var(--red)" stroke-width="3" filter="url(#glowR)"/><text x="275" y="336" text-anchor="middle" fill="var(--red)" font-size="16" font-weight="700">B</text>
+<rect x="305" y="320" width="35" height="18" rx="4" fill="var(--red)" opacity="0.5"/><rect x="345" y="320" width="35" height="18" rx="4" fill="var(--red)" opacity="0.5"/>
+<circle cx="375" cy="330" r="26" fill="rgba(255,68,68,0.2)" stroke="var(--red)" stroke-width="3" filter="url(#glowR)"/><text x="375" y="336" text-anchor="middle" fill="var(--red)" font-size="16" font-weight="700">B</text>
+<rect x="405" y="320" width="35" height="18" rx="4" fill="var(--red)" opacity="0.5"/><rect x="445" y="320" width="35" height="18" rx="4" fill="var(--red)" opacity="0.5"/>
+<circle cx="75" cy="200" r="26" fill="rgba(255,68,68,0.2)" stroke="var(--red)" stroke-width="3" filter="url(#glowR)"/><text x="75" y="206" text-anchor="middle" fill="var(--red)" font-size="16" font-weight="700">B</text>
+<rect x="25" y="215" width="35" height="18" rx="4" fill="var(--red)" opacity="0.5"/><rect x="65" y="215" width="35" height="18" rx="4" fill="var(--red)" opacity="0.5"/>
+</svg>
+</div>
+<div>
+<div class="metric-card" style="margin-bottom:0.5em;padding:0.6em 1em;border-color:rgba(255,68,68,0.4);"><span style="opacity:0.7;font-size:0.8em;">TTFT</span><span class="number color-red" style="font-size:1.5em;float:right;">420ms</span></div>
+<div class="metric-card" style="margin-bottom:0.5em;padding:0.6em 1em;border-color:rgba(255,68,68,0.4);"><span style="opacity:0.7;font-size:0.8em;">ITL</span><span class="number color-red" style="font-size:1.5em;float:right;">43ms</span></div>
+<div class="metric-card" style="margin-bottom:0.5em;padding:0.6em 1em;border-color:rgba(255,68,68,0.4);"><span style="opacity:0.7;font-size:0.8em;">KV Cache</span><span class="number color-red" style="font-size:1.5em;float:right;">87%</span></div>
+<div class="metric-card" style="margin-bottom:0.5em;padding:0.6em 1em;border-color:rgba(255,68,68,0.4);"><span style="opacity:0.7;font-size:0.8em;">Batch</span><span class="number color-red" style="font-size:1.5em;float:right;">8</span></div>
+<div class="metric-card" style="padding:0.6em 1em;border-color:rgba(57,255,20,0.4);"><span style="opacity:0.7;font-size:0.8em;">Queue</span><span class="number color-green" style="font-size:1.5em;float:right;">0 &#x2713;</span><span style="font-size:0.7em;color:var(--green);float:right;clear:right;">Still zero!</span></div>
+</div>
+</div>
+<div class="callout red" style="font-size:0.9em;">Three Blakes. Table is full. Queue is empty. <strong>It's not capacity — it's neighbours.</strong></div>
+<aside class="notes">Two more Blakes. TTFT 420ms. ITL tripled. KV cache 87%. Queue still zero. Not capacity — neighbours.</aside>
+</section>
+
+<!-- ============================================================ -->
+<!-- SLIDE 21: What Alex Feels -->
+<!-- ============================================================ -->
+<section>
+<h2>What Alex Feels</h2>
+<p style="color:var(--green);font-size:0.9em;font-weight:600;">Alex Alone (Healthy)</p>
+<svg viewBox="0 0 1200 60" width="100%" style="max-width:1200px;">
+<rect x="20" y="10" width="80" height="40" rx="6" fill="rgba(57,255,20,0.2)" stroke="var(--green)" stroke-width="1.5"/><text x="60" y="35" text-anchor="middle" fill="var(--green)" font-size="11">TTFT 82ms</text>
+<rect x="110" y="15" width="18" height="30" rx="3" fill="var(--green)" opacity="0.5"/><rect x="132" y="15" width="18" height="30" rx="3" fill="var(--green)" opacity="0.5"/><rect x="154" y="15" width="18" height="30" rx="3" fill="var(--green)" opacity="0.5"/><rect x="176" y="15" width="18" height="30" rx="3" fill="var(--green)" opacity="0.5"/><rect x="198" y="15" width="18" height="30" rx="3" fill="var(--green)" opacity="0.5"/><rect x="220" y="15" width="18" height="30" rx="3" fill="var(--green)" opacity="0.5"/><rect x="242" y="15" width="18" height="30" rx="3" fill="var(--green)" opacity="0.5"/><rect x="264" y="15" width="18" height="30" rx="3" fill="var(--green)" opacity="0.5"/>
+<text x="310" y="35" fill="var(--green)" font-size="12">14ms each</text>
+<text x="440" y="35" fill="var(--green)" font-size="14" font-weight="600">&#x2192; Done in 210ms &#x2714;</text>
+</svg>
+<div class="fragment">
+<p style="color:var(--red);font-size:0.9em;font-weight:600;margin-top:0.5em;">Alex + Blake in Batch</p>
+<svg viewBox="0 0 1200 60" width="100%" style="max-width:1200px;">
+<rect x="20" y="10" width="100" height="40" rx="6" fill="rgba(255,179,71,0.2)" stroke="var(--amber)" stroke-width="1.5"/><text x="70" y="35" text-anchor="middle" fill="var(--amber)" font-size="11">TTFT 120ms</text>
+<rect x="130" y="10" width="28" height="40" rx="3" fill="var(--red)" opacity="0.5"/><rect x="164" y="10" width="28" height="40" rx="3" fill="var(--red)" opacity="0.5"/><rect x="198" y="10" width="28" height="40" rx="3" fill="var(--red)" opacity="0.5"/><rect x="232" y="10" width="28" height="40" rx="3" fill="var(--red)" opacity="0.5"/><rect x="266" y="10" width="28" height="40" rx="3" fill="var(--red)" opacity="0.5"/><rect x="300" y="10" width="28" height="40" rx="3" fill="var(--red)" opacity="0.5"/><rect x="334" y="10" width="28" height="40" rx="3" fill="var(--red)" opacity="0.5"/><rect x="368" y="10" width="28" height="40" rx="3" fill="var(--red)" opacity="0.5"/>
+<text x="420" y="35" fill="var(--red)" font-size="12">45ms each</text>
+<text x="560" y="35" fill="var(--red)" font-size="14" font-weight="600">&#x2192; Done in 482ms. Same 64 tokens. 2.3x slower. No errors.</text>
+</svg>
+</div>
+<div class="callout red fragment" style="font-size:0.9em;">ITL x tokens = phantom latency. A 3x ITL spike on 64 tokens = <strong>+2 seconds you can't explain</strong>.</div>
+<div class="callout amber fragment" style="font-size:0.9em;">The noisy neighbour inflates ITL. <strong>Watch ITL.</strong></div>
+<aside class="notes">Alone: done in 210ms. With Blake: 482ms. Same 64 tokens, 2.3x slower, zero errors. The noisy neighbour inflates ITL.</aside>
+</section>
+
+<!-- ============================================================ -->
+<!-- SLIDE 22: Preemption: Kicked Out -->
+<!-- ============================================================ -->
+<section>
+<h2>Preemption: Kicked Out of the Batch</h2>
+<svg viewBox="0 0 1000 80" width="100%" style="max-width:1000px;">
+<rect x="20" y="15" width="960" height="50" rx="8" fill="#1a1e3a" stroke="#555" stroke-width="1"/>
+<rect x="25" y="20" width="900" height="40" rx="6" fill="rgba(255,68,68,0.25)"/><text x="475" y="45" text-anchor="middle" fill="var(--red)" font-size="14">Memory 95%</text>
+<rect x="930" y="20" width="40" height="40" rx="4" fill="rgba(0,212,255,0.4)" stroke="var(--accent-blue)" stroke-width="2"/>
+<text x="950" y="45" text-anchor="middle" fill="var(--accent-blue)" font-size="12">A</text>
+<text x="985" y="45" fill="var(--red)" font-size="18">&#x274C;</text>
+</svg>
+<div class="step-flow" style="font-size:0.85em;">
+<div class="step"><div class="step-number" style="background:var(--red);">1</div><div>KV cache hits <strong style="color:var(--red);">95%</strong></div></div>
+<div class="step"><div class="step-number" style="background:var(--amber);">2</div><div>Scheduler picks <strong style="color:var(--amber);">lowest-priority request</strong></div></div>
+<div class="step"><div class="step-number" style="background:var(--red);">3</div><div>Evicts their <strong style="color:var(--red);">KV blocks to CPU or disk</strong></div></div>
+<div class="step"><div class="step-number" style="background:var(--red);">4</div><div>When rescheduled: must <strong style="color:var(--red);">re-prefill from scratch</strong></div></div>
+</div>
+<div class="code-box" style="font-size:0.95em;text-align:center;">vllm:num_preemptions_total  # The metric nobody watches</div>
+<div class="callout amber" style="font-size:0.9em;">Re-prefill after eviction looks like a brand-new request. That's your mystery TTFT spike.</div>
+<aside class="notes">When KV cache fills, someone gets kicked out. They must re-prefill from scratch. The metric: vllm num_preemptions_total. Almost nobody watches this.</aside>
+</section>
+
+
+<!-- ============================================================ -->
+<!-- SLIDE 23: Your Dashboard Lies -->
+<!-- ============================================================ -->
+<section>
+<h2>Your Dashboard Lies</h2>
+<div class="split-layout" style="font-size:0.85em;">
+<div>
+<h3 style="color:var(--red);font-size:1em;">What RED Shows You</h3>
+<div class="metric-card" style="margin-bottom:0.5em;padding:0.7em;">
+<span style="opacity:0.7;">RATE</span>
+<svg viewBox="0 0 100 30" width="60" style="float:right;"><rect x="5" y="5" width="90" height="20" rx="4" fill="#1a1e3a" stroke="#555" stroke-width="1"/><rect x="7" y="7" width="50" height="16" rx="3" fill="var(--green)"/></svg>
+<span style="color:var(--green);float:right;margin-right:10px;">&#x2713;</span>
+</div>
+<div class="metric-card" style="margin-bottom:0.5em;padding:0.7em;">
+<span style="opacity:0.7;">ERRORS</span>
+<span class="number color-green" style="font-size:1.5em;float:right;">0 &#x2713;</span>
+</div>
+<div class="metric-card" style="margin-bottom:0.5em;padding:0.7em;">
+<span style="opacity:0.7;">DURATION P99</span>
+<span class="number color-red" style="font-size:1.5em;float:right;">1.8s &#x2717;</span>
+</div>
+<div class="callout red" style="font-size:0.85em;">Conclusion: slow requests. Scale up.</div>
+</div>
+<div class="fragment">
+<h3 style="color:var(--green);font-size:1em;">What Actually Happened</h3>
+<svg viewBox="0 0 500 60" width="100%">
+<rect x="10" y="15" width="120" height="30" rx="6" fill="rgba(57,255,20,0.2)" stroke="var(--green)" stroke-width="1.5"/><text x="70" y="35" text-anchor="middle" fill="var(--green)" font-size="12">190ms compute</text>
+<rect x="135" y="15" width="350" height="30" rx="6" fill="rgba(255,68,68,0.2)" stroke="var(--red)" stroke-width="1.5"/><text x="310" y="35" text-anchor="middle" fill="var(--red)" font-size="12">1,610ms WAITING</text>
+</svg>
+<ul style="font-size:0.9em;margin:0.5em 0;">
+<li>KV cache <strong style="color:var(--red);">94%</strong></li>
+<li>Batch size <strong style="color:var(--red);">28</strong></li>
+<li>Blake generating <strong style="color:var(--red);">3,000+ tokens</strong></li>
+<li>Alex <strong style="color:var(--red);">preempted twice</strong></li>
+</ul>
+<div class="callout green" style="font-size:0.85em;">The request was fine. <strong>The batch was noisy.</strong></div>
+</div>
+</div>
+<aside class="notes">RED says rate fine, errors zero, p99 1.8s. Wrong. 190ms compute, 1,610ms waiting. The batch was noisy.</aside>
+</section>
+
+<!-- ============================================================ -->
+<!-- SLIDE 24: Three Causes of Latency -->
+<!-- ============================================================ -->
+<section>
+<p class="slide-label">ACT 4 · OBSERVING IT</p>
+<h2>Three Causes of Latency</h2>
+<div class="grid-3x2" style="grid-template-rows:1fr;">
+<div class="metric-card" style="border-color:rgba(0,212,255,0.3);">
+<div style="font-size:1.5em;">&#x1F550;</div>
+<h3 style="color:var(--accent-blue);font-size:1em;margin:0.3em 0;">Scheduling</h3>
+<p style="font-size:0.8em;opacity:0.8;">Queue time — waiting for a seat</p>
+<div class="code-box" style="font-size:0.75em;">vllm:num_requests_waiting</div>
+<p style="font-size:0.75em;color:var(--green);margin-top:0.3em;">Fix: Scale out</p>
+</div>
+<div class="metric-card" style="border-color:rgba(255,179,71,0.3);">
+<div style="font-size:1.5em;">&#x1F9E0;</div>
+<h3 style="color:var(--amber);font-size:1em;margin:0.3em 0;">Memory</h3>
+<p style="font-size:0.8em;opacity:0.8;">KV pressure &#x2192; preemptions</p>
+<div class="code-box" style="font-size:0.75em;">vllm:kv_cache_usage_perc</div>
+<p style="font-size:0.75em;color:var(--green);margin-top:0.3em;">Fix: Cap batch, prefix caching</p>
+</div>
+<div class="metric-card" style="border-color:rgba(255,68,68,0.3);">
+<div style="font-size:1.5em;">&#x1F465;</div>
+<h3 style="color:var(--red);font-size:1em;margin:0.3em 0;">Neighbour</h3>
+<p style="font-size:0.8em;opacity:0.8;">ITL inflation from batch-mates</p>
+<div class="code-box" style="font-size:0.75em;">vllm:inter_token_latency_seconds</div>
+<p style="font-size:0.75em;color:var(--green);margin-top:0.3em;">Fix: Route by length</p>
+</div>
+</div>
+<div class="callout amber" style="font-size:0.9em;">Your dashboard shows the symptom. These three tell you the <strong>cause</strong>.</div>
+<aside class="notes">Three causes. Scheduling — scale out. Memory — cap batch. Neighbour — route by length. These three tell you the cause.</aside>
+</section>
+
+<!-- ============================================================ -->
+<!-- SLIDE 25: Inside a vLLM Step -->
+<!-- ============================================================ -->
+<section>
+<h2>Inside a vLLM Step</h2>
+<p style="font-size:0.8em;opacity:0.6;">Repeats hundreds of times per second</p>
+<div style="display:flex;justify-content:center;">
+<svg viewBox="0 0 700 580" width="600">
+<defs>
+<linearGradient id="stepLine" x1="0%" y1="0%" x2="0%" y2="100%"><stop offset="0%" stop-color="var(--accent-blue)"/><stop offset="100%" stop-color="var(--purple)"/></linearGradient>
+</defs>
+<line x1="100" y1="50" x2="100" y2="490" stroke="url(#stepLine)" stroke-width="3"/>
+<!-- Box 1 -->
+<circle cx="100" cy="50" r="18" fill="var(--accent-blue)"/><text x="100" y="56" text-anchor="middle" fill="var(--bg-navy)" font-size="16" font-weight="700">1</text>
+<rect x="140" y="25" width="500" height="50" rx="10" fill="rgba(0,212,255,0.1)" stroke="var(--accent-blue)" stroke-width="1.5"/>
+<text x="160" y="55" fill="var(--accent-blue)" font-size="16">&#x1F4E5; CHECK QUEUE — 3 waiting</text>
+<!-- Box 2 -->
+<circle cx="100" cy="150" r="18" fill="var(--amber)"/><text x="100" y="156" text-anchor="middle" fill="var(--bg-navy)" font-size="16" font-weight="700">2</text>
+<rect x="140" y="125" width="500" height="50" rx="10" fill="rgba(255,179,71,0.1)" stroke="var(--amber)" stroke-width="1.5"/>
+<text x="160" y="155" fill="var(--amber)" font-size="16">&#x1F9E0; ALLOCATE KV CACHE — 79% full</text>
+<!-- Box 3 -->
+<circle cx="100" cy="250" r="18" fill="var(--red)"/><text x="100" y="256" text-anchor="middle" fill="white" font-size="16" font-weight="700">3</text>
+<rect x="140" y="225" width="500" height="50" rx="10" fill="rgba(255,68,68,0.1)" stroke="var(--red)" stroke-width="1.5"/>
+<text x="160" y="255" fill="var(--red)" font-size="16">&#x26A0;&#xFE0F; PREEMPT IF NEEDED — 2 evicted</text>
+<!-- Box 4 (large, prominent) -->
+<circle cx="100" cy="360" r="22" fill="var(--red)" filter="url(#glowR)"/><text x="100" y="367" text-anchor="middle" fill="white" font-size="18" font-weight="700">4</text>
+<rect x="140" y="325" width="520" height="70" rx="12" fill="rgba(255,68,68,0.15)" stroke="var(--red)" stroke-width="2.5"/>
+<text x="160" y="355" fill="var(--red)" font-size="17" font-weight="700">&#x1F525; FORWARD PASS — 24 requests share 1 GPU</text>
+<text x="160" y="380" fill="var(--amber)" font-size="14">&#x2190; Blake lives here</text>
+<!-- Box 5 -->
+<circle cx="100" cy="470" r="18" fill="var(--green)"/><text x="100" y="476" text-anchor="middle" fill="var(--bg-navy)" font-size="16" font-weight="700">5</text>
+<rect x="140" y="445" width="500" height="50" rx="10" fill="rgba(57,255,20,0.1)" stroke="var(--green)" stroke-width="1.5"/>
+<text x="160" y="475" fill="var(--green)" font-size="16">&#x1F4E4; RETURN TOKENS — 1 finished, 23 continue</text>
+<!-- Loop arrow -->
+<path d="M100 500 Q100 540 350 540 Q600 540 660 470 Q670 450 660 430" fill="none" stroke="var(--purple)" stroke-width="2" stroke-dasharray="6,3" marker-end="url(#arrowP)"/>
+<text x="400" y="555" text-anchor="middle" fill="var(--purple)" font-size="13">loop</text>
+</svg>
+</div>
+<aside class="notes">Five steps, hundreds of times per second. Check queue, allocate KV, preempt if needed, forward pass where all requests share one GPU, return tokens. Blake lives in step 4.</aside>
+</section>
+
+<!-- ============================================================ -->
+<!-- SLIDE 26: The Observability Stack -->
+<!-- ============================================================ -->
+<section>
+<h2>The Observability Stack</h2>
+<svg viewBox="0 0 1200 520" width="100%" style="max-width:1200px;display:block;margin:0 auto;">
+<defs>
+<linearGradient id="grafGrad" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="var(--accent-blue)" stop-opacity="0.3"/><stop offset="100%" stop-color="var(--purple)" stop-opacity="0.1"/></linearGradient>
+<linearGradient id="promGrad" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="var(--green)" stop-opacity="0.3"/><stop offset="100%" stop-color="var(--green)" stop-opacity="0.1"/></linearGradient>
+</defs>
+<!-- Grafana -->
+<rect x="300" y="20" width="600" height="90" rx="16" fill="url(#grafGrad)" stroke="var(--accent-blue)" stroke-width="2"/>
+<text x="600" y="55" text-anchor="middle" fill="var(--accent-blue)" font-size="22" font-weight="700">GRAFANA</text>
+<text x="600" y="80" text-anchor="middle" fill="var(--text-white)" font-size="14" opacity="0.7">Dashboards &amp; Alerts</text>
+<rect x="460" y="62" width="20" height="15" rx="2" fill="var(--accent-blue)" opacity="0.3"/><rect x="485" y="62" width="20" height="15" rx="2" fill="var(--accent-blue)" opacity="0.3"/><rect x="510" y="62" width="20" height="15" rx="2" fill="var(--accent-blue)" opacity="0.3"/>
+<!-- Arrow -->
+<line x1="600" y1="115" x2="600" y2="165" stroke="#888" stroke-width="2" marker-end="url(#arrowGray)"/><text x="630" y="145" fill="#888" font-size="12">queries</text>
+<!-- Prometheus -->
+<rect x="300" y="170" width="600" height="90" rx="16" fill="url(#promGrad)" stroke="var(--green)" stroke-width="2"/>
+<text x="600" y="205" text-anchor="middle" fill="var(--green)" font-size="22" font-weight="700">PROMETHEUS</text>
+<text x="600" y="230" text-anchor="middle" fill="var(--text-white)" font-size="14" opacity="0.7">scrapes every 15s</text>
+<!-- Two arrows down -->
+<line x1="450" y1="265" x2="300" y2="340" stroke="#888" stroke-width="2" marker-end="url(#arrowGray)"/><text x="350" y="300" fill="#888" font-size="12">scrapes</text>
+<line x1="750" y1="265" x2="900" y2="340" stroke="#888" stroke-width="2" marker-end="url(#arrowGray)"/><text x="840" y="300" fill="#888" font-size="12">scrapes</text>
+<!-- vLLM -->
+<rect x="100" y="340" width="400" height="130" rx="16" fill="rgba(0,212,255,0.05)" stroke="var(--accent-blue)" stroke-width="2"/>
+<text x="300" y="375" text-anchor="middle" fill="var(--accent-blue)" font-size="18" font-weight="700">vLLM /metrics</text>
+<text x="300" y="400" text-anchor="middle" fill="var(--text-white)" font-size="12" opacity="0.7">TTFT · ITL · KV cache %</text>
+<text x="300" y="420" text-anchor="middle" fill="var(--text-white)" font-size="12" opacity="0.7">batch size · queue depth</text>
+<!-- DCGM -->
+<rect x="700" y="340" width="400" height="130" rx="16" fill="rgba(255,68,68,0.05)" stroke="var(--red)" stroke-width="2"/>
+<text x="900" y="375" text-anchor="middle" fill="var(--red)" font-size="18" font-weight="700">DCGM Exporter /metrics</text>
+<text x="900" y="400" text-anchor="middle" fill="var(--text-white)" font-size="12" opacity="0.7">Tensor core % · GPU memory</text>
+<text x="900" y="420" text-anchor="middle" fill="var(--text-white)" font-size="12" opacity="0.7">temperature · power</text>
+</svg>
+<div class="callout blue" style="font-size:0.9em;">Four components. All open-source. No vendor lock-in.</div>
+<aside class="notes">Grafana, Prometheus, vLLM metrics, DCGM Exporter. All open-source.</aside>
+</section>
+
+
+<!-- ============================================================ -->
+<!-- SLIDE 27: Where to Look: Three Tiers -->
+<!-- ============================================================ -->
+<section>
+<h2>Where to Look: Three Tiers</h2>
+<div style="display:flex;flex-direction:column;gap:1em;margin-top:1em;">
+<div class="metric-card" style="border-color:rgba(0,212,255,0.4);padding:1em 1.5em;">
+<span style="font-size:1.3em;">&#x1F535;</span>
+<strong style="color:var(--accent-blue);font-size:1.1em;margin-left:0.5em;">Application — vLLM /metrics</strong>
+<p style="margin:0.3em 0 0 2.3em;opacity:0.8;font-size:0.85em;">TTFT · ITL · KV cache % · batch size · queue depth · prefix cache</p>
+</div>
+<div class="metric-card" style="border-color:rgba(255,68,68,0.4);padding:1em 1.5em;">
+<span style="font-size:1.3em;">&#x1F534;</span>
+<strong style="color:var(--red);font-size:1.1em;margin-left:0.5em;">GPU — DCGM Exporter</strong>
+<p style="margin:0.3em 0 0 2.3em;opacity:0.8;font-size:0.85em;">Tensor core % · memory used/free · power · temperature</p>
+</div>
+<div class="metric-card" style="border-color:rgba(57,255,20,0.4);padding:1em 1.5em;">
+<span style="font-size:1.3em;">&#x1F7E2;</span>
+<strong style="color:var(--green);font-size:1.1em;margin-left:0.5em;">Host — node_exporter</strong>
+<p style="margin:0.3em 0 0 2.3em;opacity:0.8;font-size:0.85em;">CPU · network I/O · disk (KV offload)</p>
+</div>
+</div>
+<div class="callout amber" style="font-size:0.9em;">You need <strong>all three</strong> to diagnose a noisy neighbour.</div>
+<aside class="notes">Three tiers. Application, GPU, Host. You need all three.</aside>
+</section>
+
+<!-- ============================================================ -->
+<!-- SLIDE 28: Phase 1: Five Short Requests -->
+<!-- ============================================================ -->
+<section>
+<h2>[PRE-RECORDED] Phase 1: Five Short Requests</h2>
+<p style="font-size:0.75em;opacity:0.5;font-style:italic;">[Replace with Grafana screenshot after pre-recording]</p>
+<div class="grid-3x2" style="font-size:0.85em;">
+<div class="metric-card" style="text-align:center;border-color:rgba(57,255,20,0.3);">
+<div class="label">TTFT P99</div>
+<div class="number color-green" style="font-size:2em;">82ms</div>
+<svg viewBox="0 0 120 30" width="120"><polyline points="5,20 20,18 40,19 60,17 80,18 100,17 115,18" fill="none" stroke="var(--green)" stroke-width="2"/></svg>
+</div>
+<div class="metric-card" style="text-align:center;border-color:rgba(57,255,20,0.3);">
+<div class="label">ITL P99</div>
+<div class="number color-green" style="font-size:2em;">14ms</div>
+<svg viewBox="0 0 120 30" width="120"><polyline points="5,20 20,19 40,20 60,19 80,20 100,19 115,20" fill="none" stroke="var(--green)" stroke-width="2"/></svg>
+</div>
+<div class="metric-card" style="text-align:center;border-color:rgba(57,255,20,0.3);">
+<div class="label">KV CACHE</div>
+<div class="number color-green" style="font-size:2em;">18%</div>
+<svg viewBox="0 0 120 30" width="120"><polyline points="5,22 20,21 40,22 60,21 80,22 100,21 115,22" fill="none" stroke="var(--green)" stroke-width="2"/></svg>
+</div>
+<div class="metric-card" style="text-align:center;border-color:rgba(0,212,255,0.3);">
+<div class="label">BATCH SIZE</div>
+<div class="number color-blue" style="font-size:2em;">5</div>
+<svg viewBox="0 0 120 30" width="120"><polyline points="5,18 20,18 40,18 60,18 80,18 100,18 115,18" fill="none" stroke="var(--accent-blue)" stroke-width="2"/></svg>
+</div>
+<div class="metric-card" style="text-align:center;border-color:rgba(0,212,255,0.3);">
+<div class="label">TENSOR CORE</div>
+<div class="number color-blue" style="font-size:2em;">38%</div>
+<svg viewBox="0 0 120 30" width="120"><polyline points="5,16 20,15 40,17 60,15 80,16 100,15 115,16" fill="none" stroke="var(--accent-blue)" stroke-width="2"/></svg>
+</div>
+<div class="metric-card" style="text-align:center;border-color:rgba(57,255,20,0.3);">
+<div class="label">QUEUE DEPTH</div>
+<div class="number color-green" style="font-size:2em;">0</div>
+<svg viewBox="0 0 120 30" width="120"><polyline points="5,25 20,25 40,25 60,25 80,25 100,25 115,25" fill="none" stroke="var(--green)" stroke-width="2"/></svg>
+</div>
+</div>
+<div class="callout green" style="font-size:0.9em;">Everything flat. Everything healthy. <strong>Remember these numbers.</strong></div>
+<aside class="notes">Baseline. TTFT 82ms, ITL 14ms, KV cache 18%, batch 5, tensor core 38%, queue zero. Remember these numbers.</aside>
+</section>
+
+<!-- ============================================================ -->
+<!-- SLIDE 29: Phase 2: Blake Arrives -->
+<!-- ============================================================ -->
+<section>
+<h2>[DEMO] Phase 2: Blake Arrives</h2>
+<p style="font-size:0.8em;opacity:0.6;">+3 long requests. Same GPU. Alex didn't change — the batch did.</p>
+<div class="grid-3x2" style="font-size:0.85em;">
+<div class="metric-card fragment" style="text-align:center;border-color:rgba(255,68,68,0.4);">
+<div class="label">TTFT P99</div>
+<div class="number" style="font-size:1.6em;"><span class="strikethrough" style="color:#888;">82</span> <span class="color-red">&#x2192; 420ms</span></div>
+<div style="color:var(--red);font-size:0.9em;font-weight:700;">&#x25B2; 5x</div>
+</div>
+<div class="metric-card fragment" style="text-align:center;border-color:rgba(255,68,68,0.4);">
+<div class="label">ITL P99</div>
+<div class="number" style="font-size:1.6em;"><span class="strikethrough" style="color:#888;">14</span> <span class="color-red">&#x2192; 43ms</span></div>
+<div style="color:var(--red);font-size:0.9em;font-weight:700;">&#x25B2; 3x</div>
+</div>
+<div class="metric-card fragment" style="text-align:center;border-color:rgba(255,68,68,0.4);">
+<div class="label">KV CACHE</div>
+<div class="number" style="font-size:1.6em;"><span class="strikethrough" style="color:#888;">18</span> <span class="color-red">&#x2192; 87%</span></div>
+<div style="color:var(--red);font-size:0.9em;font-weight:700;">&#x25B2; danger</div>
+</div>
+<div class="metric-card fragment" style="text-align:center;border-color:rgba(255,179,71,0.4);">
+<div class="label">BATCH SIZE</div>
+<div class="number" style="font-size:1.6em;"><span class="strikethrough" style="color:#888;">5</span> <span class="color-amber">&#x2192; 8</span></div>
+<div style="color:var(--amber);font-size:0.9em;font-weight:700;">&#x25B2;</div>
+</div>
+<div class="metric-card fragment" style="text-align:center;border-color:rgba(255,179,71,0.4);">
+<div class="label">TENSOR CORE</div>
+<div class="number" style="font-size:1.6em;"><span class="strikethrough" style="color:#888;">38</span> <span class="color-amber">&#x2192; 74%</span></div>
+<div style="color:var(--amber);font-size:0.9em;font-weight:700;">&#x25B2;</div>
+</div>
+<div class="metric-card fragment" style="text-align:center;border-color:rgba(57,255,20,0.4);">
+<div class="label">QUEUE DEPTH</div>
+<div class="number color-green" style="font-size:1.6em;">0 &#x2713;</div>
+<div style="color:var(--green);font-size:0.9em;font-weight:700;">still zero</div>
+</div>
+</div>
+<div class="callout red fragment" style="font-size:0.95em;">Queue is <strong>ZERO</strong>. It's not a capacity problem. It's a <strong>batch problem</strong>.</div>
+<aside class="notes">Blake arrives. TTFT 5x slower. ITL 3x slower. KV cache 87%. Queue still zero. Not capacity — batch problem.</aside>
+</section>
+
+<!-- ============================================================ -->
+<!-- SLIDE 30: Pin the Cause -->
+<!-- ============================================================ -->
+<section>
+<h2>Pin the Cause</h2>
+<svg viewBox="0 0 1400 120" width="100%" style="max-width:1400px;display:block;margin:0.5em auto;">
+<defs><marker id="chainArr" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="var(--amber)"/></marker></defs>
+<rect x="10" y="25" width="185" height="55" rx="10" fill="rgba(255,68,68,0.15)" stroke="var(--red)" stroke-width="1.5"/><text x="102" y="48" text-anchor="middle" fill="var(--red)" font-size="11">Blake sends</text><text x="102" y="64" text-anchor="middle" fill="var(--red)" font-size="11">4K request</text>
+<line x1="198" y1="52" x2="218" y2="52" stroke="var(--amber)" stroke-width="2" marker-end="url(#chainArr)"/>
+<rect x="222" y="25" width="170" height="55" rx="10" fill="rgba(255,179,71,0.1)" stroke="var(--amber)" stroke-width="1.5"/><text x="307" y="48" text-anchor="middle" fill="var(--amber)" font-size="11">Batch</text><text x="307" y="64" text-anchor="middle" fill="var(--amber)" font-size="11">5 &#x2192; 8</text>
+<line x1="395" y1="52" x2="415" y2="52" stroke="var(--amber)" stroke-width="2" marker-end="url(#chainArr)"/>
+<rect x="419" y="25" width="185" height="55" rx="10" fill="rgba(255,68,68,0.15)" stroke="var(--red)" stroke-width="1.5"/><text x="511" y="48" text-anchor="middle" fill="var(--red)" font-size="11">KV cache</text><text x="511" y="64" text-anchor="middle" fill="var(--red)" font-size="11">18 &#x2192; 87%</text>
+<line x1="607" y1="52" x2="627" y2="52" stroke="var(--amber)" stroke-width="2" marker-end="url(#chainArr)"/>
+<rect x="631" y="25" width="160" height="55" rx="10" fill="rgba(255,68,68,0.15)" stroke="var(--red)" stroke-width="1.5"/><text x="711" y="55" text-anchor="middle" fill="var(--red)" font-size="12">Preemptions</text>
+<line x1="794" y1="52" x2="814" y2="52" stroke="var(--amber)" stroke-width="2" marker-end="url(#chainArr)"/>
+<rect x="818" y="25" width="185" height="55" rx="10" fill="rgba(255,179,71,0.1)" stroke="var(--amber)" stroke-width="1.5"/><text x="910" y="48" text-anchor="middle" fill="var(--amber)" font-size="11">ITL</text><text x="910" y="64" text-anchor="middle" fill="var(--amber)" font-size="11">14 &#x2192; 43ms</text>
+<line x1="1006" y1="52" x2="1026" y2="52" stroke="var(--amber)" stroke-width="2" marker-end="url(#chainArr)"/>
+<rect x="1030" y="25" width="200" height="55" rx="10" fill="rgba(255,68,68,0.15)" stroke="var(--red)" stroke-width="1.5"/><text x="1130" y="48" text-anchor="middle" fill="var(--red)" font-size="11">Alex:</text><text x="1130" y="64" text-anchor="middle" fill="var(--red)" font-size="11">210 &#x2192; 482ms</text>
+</svg>
+<p style="font-size:1.2em;text-align:center;margin:0.8em 0;font-weight:600;">More neighbours &#x00D7; more luggage = slower for everyone</p>
+<div class="split-layout" style="font-size:0.85em;">
+<div class="callout red">&#x274C; Dashboard says: GPU 74%, p99 doubled &#x2192; <strong>ADD MORE GPUs</strong></div>
+<div class="callout green">&#x2713; Reality: Cap batch size. Route Blake separately. &#x2192; <strong>FEWER NEIGHBOURS</strong></div>
+</div>
+<aside class="notes">The full chain. Blake sends a long request. Batch grows. KV cache fills. Preemptions. ITL spikes. Alex slows down. Dashboard says add GPUs. Reality: fewer neighbours.</aside>
+</section>
+
+
+<!-- ============================================================ -->
+<!-- SLIDE 31: Six Queries for Your Dashboard -->
+<!-- ============================================================ -->
+<section>
+<h2>Six Queries for Your Dashboard</h2>
+<p style="font-size:0.8em;color:var(--amber);">&#x1F4F8; Take a photo of this slide.</p>
+<div class="grid-3x2" style="font-size:0.75em;">
+<div class="metric-card" style="padding:0.8em;">
+<span style="color:var(--accent-blue);">&#x1F535; TTFT p99</span>
+<div class="code-box" style="font-size:0.8em;margin:0.4em 0;">histogram_quantile(0.99,
+  rate(vllm:time_to_first_token
+    _seconds_bucket[5m]))</div>
+<div style="opacity:0.6;font-size:0.85em;">Did they get a seat?</div>
+</div>
+<div class="metric-card" style="padding:0.8em;border-color:rgba(255,179,71,0.4);">
+<span style="color:var(--amber);">&#x1F7E2; ITL p99</span>
+<div class="code-box" style="font-size:0.8em;margin:0.4em 0;">histogram_quantile(0.99,
+  rate(vllm:inter_token_latency
+    _seconds_bucket[5m]))</div>
+<div style="opacity:0.6;font-size:0.85em;">How the seat feels — <strong>THE signal</strong></div>
+</div>
+<div class="metric-card" style="padding:0.8em;">
+<span style="color:var(--amber);">&#x1F7E0; KV Cache</span>
+<div class="code-box" style="font-size:0.8em;margin:0.4em 0;">vllm:kv_cache_usage_perc</div>
+<div style="opacity:0.6;font-size:0.85em;">How full is the luggage rack? &gt;85% = danger</div>
+</div>
+<div class="metric-card" style="padding:0.8em;">
+<span style="color:var(--purple);">&#x1F7E3; Prefix Hit Rate</span>
+<div class="code-box" style="font-size:0.8em;margin:0.4em 0;">rate(vllm:prefix_cache_hits[5m])
+/ rate(vllm:prefix_cache
+    _queries[5m])</div>
+<div style="opacity:0.6;font-size:0.85em;">Are we re-reading?</div>
+</div>
+<div class="metric-card" style="padding:0.8em;">
+<span style="color:var(--purple);">&#x1F7E3; Batch Size</span>
+<div class="code-box" style="font-size:0.8em;margin:0.4em 0;">vllm:num_requests_running</div>
+<div style="opacity:0.6;font-size:0.85em;">How crowded is the table?</div>
+</div>
+<div class="metric-card" style="padding:0.8em;">
+<span style="color:var(--red);">&#x1F534; Tensor Core</span>
+<div class="code-box" style="font-size:0.8em;margin:0.4em 0;">DCGM_FI_PROF_PIPE
+  _TENSOR_ACTIVE</div>
+<div style="opacity:0.6;font-size:0.85em;">GPU computing or waiting?</div>
+</div>
+</div>
+<aside class="notes">Six queries. TTFT, ITL — the noisy neighbour signal, KV cache, prefix hit rate, batch size, tensor core.</aside>
+</section>
+
+<!-- ============================================================ -->
+<!-- SLIDE 32: Three Alerts That Work -->
+<!-- ============================================================ -->
+<section>
+<h2>Three Alerts That Work</h2>
+<div style="display:flex;flex-direction:column;gap:1.2em;margin-top:1.5em;">
+<div class="callout amber" style="font-size:1em;padding:1.2em 1.5em;">
+<span style="font-size:1.3em;">&#x26A0;&#xFE0F;</span>
+<strong style="margin-left:0.5em;">KV Cache &gt; 90% for 2m</strong>
+<p style="margin:0.4em 0 0 2.3em;opacity:0.8;font-size:0.85em;">Preemptions imminent. Cap batch size.</p>
+</div>
+<div class="callout red" style="font-size:1em;padding:1.2em 1.5em;">
+<span style="font-size:1.3em;">&#x1F6A8;</span>
+<strong style="margin-left:0.5em;">TTFT p99 &gt; 2s for 5m</strong>
+<p style="margin:0.4em 0 0 2.3em;opacity:0.8;font-size:0.85em;">Users staring at spinner. Scale or shed load.</p>
+</div>
+<div class="callout blue" style="font-size:1em;padding:1.2em 1.5em;">
+<span style="font-size:1.3em;">&#x1F4CA;</span>
+<strong style="margin-left:0.5em;">Queue &gt; 0 for 3m</strong>
+<p style="margin:0.4em 0 0 2.3em;opacity:0.8;font-size:0.85em;">Real capacity limit. Scale out now.</p>
+</div>
+</div>
+<div class="callout green" style="font-size:1em;margin-top:1em;"><strong>Three alerts. Not thirty.</strong></div>
+<aside class="notes">Three alerts. KV cache 90%, TTFT 2s, queue greater than 0. Three alerts, not thirty.</aside>
+</section>
+
+<!-- ============================================================ -->
+<!-- SLIDE 33: Taming Blake -->
+<!-- ============================================================ -->
+<section>
+<h2>Taming Blake</h2>
+<div class="grid-2x2" style="font-size:0.85em;">
+<div class="metric-card" style="border-color:rgba(0,212,255,0.3);">
+<h3 style="color:var(--accent-blue);font-size:1em;margin:0 0 0.3em;">1. Cap Batch Size</h3>
+<div class="code-box" style="font-size:0.9em;">--max-num-seqs 16</div>
+<p style="font-size:0.85em;opacity:0.8;">Default is 256! Start at 16, watch ITL.</p>
+</div>
+<div class="metric-card" style="border-color:rgba(184,119,217,0.3);">
+<h3 style="color:var(--purple);font-size:1em;margin:0 0 0.3em;">2. Route by Length</h3>
+<svg viewBox="0 0 400 100" width="100%" style="margin:0.3em 0;">
+<rect x="130" y="20" width="120" height="40" rx="8" fill="rgba(184,119,217,0.15)" stroke="var(--purple)" stroke-width="1.5"/><text x="190" y="45" text-anchor="middle" fill="var(--purple)" font-size="13">Router</text>
+<line x1="250" y1="30" x2="320" y2="15" stroke="var(--accent-blue)" stroke-width="1.5" marker-end="url(#arrowB)"/>
+<rect x="320" y="2" width="70" height="28" rx="6" fill="rgba(0,212,255,0.15)" stroke="var(--accent-blue)" stroke-width="1"/><text x="355" y="20" text-anchor="middle" fill="var(--accent-blue)" font-size="11">Pool A</text>
+<line x1="250" y1="50" x2="320" y2="65" stroke="var(--red)" stroke-width="1.5" marker-end="url(#arrowRed)"/>
+<rect x="320" y="52" width="70" height="28" rx="6" fill="rgba(255,68,68,0.15)" stroke="var(--red)" stroke-width="1"/><text x="355" y="70" text-anchor="middle" fill="var(--red)" font-size="11">Pool B</text>
+</svg>
+<p style="font-size:0.85em;opacity:0.8;">Short requests get their own pool.</p>
+</div>
+<div class="metric-card" style="border-color:rgba(57,255,20,0.3);">
+<h3 style="color:var(--green);font-size:1em;margin:0 0 0.3em;">3. Prefix Caching</h3>
+<div class="code-box" style="font-size:0.9em;">--enable-prefix-caching</div>
+<p style="font-size:0.85em;opacity:0.8;">Reuse KV for shared prompts. 30-50% memory savings.</p>
+</div>
+<div class="metric-card" style="border-color:rgba(255,179,71,0.3);">
+<h3 style="color:var(--amber);font-size:1em;margin:0 0 0.3em;">4. Scale on Queue</h3>
+<p style="font-size:0.85em;opacity:0.8;">Queue depth = leading indicator.<br/>GPU% = lagging.<br/>Scale when queue &gt; 0 for 3m.</p>
+</div>
+</div>
+<aside class="notes">Four mitigations. Cap batch size. Route by length. Prefix caching. Scale on queue, not GPU.</aside>
+</section>
+
+<!-- ============================================================ -->
+<!-- SLIDE 34: Monday Morning -->
+<!-- ============================================================ -->
+<section>
+<h2>Monday Morning</h2>
+<ul class="checklist">
+<li class="fragment">Expose vLLM /metrics to Prometheus</li>
+<li class="fragment">Add DCGM Exporter to GPU nodes</li>
+<li class="fragment">Build the 6-panel dashboard (slide 31)</li>
+<li class="fragment">Set the 3 alerts (slide 32)</li>
+<li class="fragment">Tune --max-num-seqs (start at 16, watch ITL)</li>
+<li class="fragment">Enable --enable-prefix-caching</li>
+</ul>
+<div class="callout green fragment" style="font-size:1em;margin-top:1em;"><strong>2-4 hours to implement. 50-70% p99 reduction on mixed workloads.</strong></div>
+<aside class="notes">Monday morning checklist. Six items. Two to four hours. 50 to 70 percent p99 reduction on mixed workloads.</aside>
+</section>
+
+<!-- ============================================================ -->
+<!-- SLIDE 35: Close -->
+<!-- ============================================================ -->
+<section class="close-slide">
+<div class="big-quote" style="max-width:900px;">
+<span style="color:var(--red);">"Next time your LLM p99 spikes,<br/>don't ask 'which request is slow?'"</span><br/><br/>
+<span class="fragment" style="color:var(--green);font-weight:600;">"Ask: who else is in the batch?"</span>
+</div>
+<div style="margin:2em 0;">
+<div style="width:300px;height:3px;background:linear-gradient(90deg,var(--accent-blue),var(--purple));margin:0 auto;border-radius:2px;"></div>
+</div>
+<div style="font-size:0.85em;opacity:0.7;margin:1em 0;">
+<p>&#x1F4BB; github.com/sutekar/gpu-noisy-neighbour-dashboard</p>
+<p>&#x1F426; @SaijUtekar</p>
+</div>
+<div style="margin:1em 0;">
+<svg viewBox="0 0 100 100" width="100" height="100"><rect x="5" y="5" width="90" height="90" rx="8" fill="white" stroke="#ccc" stroke-width="1"/><text x="50" y="55" text-anchor="middle" fill="#333" font-size="16" font-weight="700">QR</text></svg>
+</div>
+<h2 class="glow-text" style="color:var(--accent-blue);font-size:2em;text-align:center;">Thank you.</h2>
+<aside class="notes">Next time your LLM p99 spikes, don't ask which request is slow. Ask: who else is in the batch? Thank you.</aside>
+</section>
+
+</div><!-- /.slides -->
+</div><!-- /.reveal -->
+
+<script src="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/reveal.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/plugin/notes/notes.js"></script>
+<script>
+Reveal.initialize({
+    width: 1920,
+    height: 1080,
+    margin: 0.04,
+    hash: true,
+    transition: 'fade',
+    plugins: [ RevealNotes ]
+});
+</script>
+</body>
+</html>

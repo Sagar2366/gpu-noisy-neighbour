@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: llm-demo
+  labels:
+    purpose: observability-summit-demo
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: hf-token
+  namespace: llm-demo
+type: Opaque
+stringData:
+  token: "${HF_TOKEN}"

@@ -1,0 +1,297 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: noisy-neighbour-dashboard
+  namespace: llm-demo
+  labels:
+    grafana_dashboard: "1"
+data:
+  noisy-neighbour.json: |
+    {
+      "annotations": {
+        "list": [
+          {
+            "builtIn": 1,
+            "datasource": { "type": "grafana", "uid": "-- Grafana --" },
+            "enable": true,
+            "hide": true,
+            "iconColor": "rgba(0, 211, 255, 1)",
+            "name": "Annotations & Alerts",
+            "type": "dashboard"
+          }
+        ]
+      },
+      "editable": true,
+      "graphTooltip": 1,
+      "id": null,
+      "links": [],
+      "panels": [
+        {
+          "id": 1,
+          "title": "TTFT p99 (Time to First Token)",
+          "type": "timeseries",
+          "gridPos": { "h": 10, "w": 8, "x": 0, "y": 0 },
+          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+          "fieldConfig": {
+            "defaults": {
+              "color": { "mode": "fixed", "fixedColor": "#5794F2" },
+              "custom": {
+                "drawStyle": "line",
+                "fillOpacity": 15,
+                "gradientMode": "scheme",
+                "lineInterpolation": "smooth",
+                "lineWidth": 2,
+                "pointSize": 5,
+                "showPoints": "auto",
+                "spanNulls": false,
+                "stacking": { "group": "A", "mode": "none" },
+                "thresholdsStyle": { "mode": "area" }
+              },
+              "unit": "s",
+              "min": 0,
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "green", "value": null },
+                  { "color": "yellow", "value": 0.5 },
+                  { "color": "red", "value": 2 }
+                ]
+              }
+            }
+          },
+          "targets": [
+            {
+              "expr": "histogram_quantile(0.99, sum(rate(vllm:time_to_first_token_seconds_bucket[1m])) by (le))",
+              "legendFormat": "TTFT p99",
+              "refId": "A"
+            },
+            {
+              "expr": "histogram_quantile(0.50, sum(rate(vllm:time_to_first_token_seconds_bucket[1m])) by (le))",
+              "legendFormat": "TTFT p50",
+              "refId": "B"
+            }
+          ]
+        },
+        {
+          "id": 2,
+          "title": "ITL p99 (Inter-Token Latency)",
+          "type": "timeseries",
+          "gridPos": { "h": 10, "w": 8, "x": 8, "y": 0 },
+          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+          "fieldConfig": {
+            "defaults": {
+              "color": { "mode": "fixed", "fixedColor": "#73BF69" },
+              "custom": {
+                "drawStyle": "line",
+                "fillOpacity": 15,
+                "gradientMode": "scheme",
+                "lineInterpolation": "smooth",
+                "lineWidth": 2,
+                "pointSize": 5,
+                "showPoints": "auto",
+                "spanNulls": false,
+                "stacking": { "group": "A", "mode": "none" },
+                "thresholdsStyle": { "mode": "area" }
+              },
+              "unit": "s",
+              "min": 0,
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "green", "value": null },
+                  { "color": "yellow", "value": 0.03 },
+                  { "color": "red", "value": 0.1 }
+                ]
+              }
+            }
+          },
+          "targets": [
+            {
+              "expr": "histogram_quantile(0.99, sum(rate(vllm:inter_token_latency_seconds_bucket[1m])) by (le))",
+              "legendFormat": "ITL p99",
+              "refId": "A"
+            },
+            {
+              "expr": "histogram_quantile(0.50, sum(rate(vllm:inter_token_latency_seconds_bucket[1m])) by (le))",
+              "legendFormat": "ITL p50",
+              "refId": "B"
+            }
+          ]
+        },
+        {
+          "id": 3,
+          "title": "KV Cache Usage",
+          "type": "timeseries",
+          "gridPos": { "h": 10, "w": 8, "x": 16, "y": 0 },
+          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+          "fieldConfig": {
+            "defaults": {
+              "color": { "mode": "fixed", "fixedColor": "#FF9830" },
+              "custom": {
+                "drawStyle": "line",
+                "fillOpacity": 20,
+                "gradientMode": "scheme",
+                "lineInterpolation": "smooth",
+                "lineWidth": 2,
+                "pointSize": 5,
+                "showPoints": "auto",
+                "spanNulls": false,
+                "stacking": { "group": "A", "mode": "none" },
+                "thresholdsStyle": { "mode": "area" }
+              },
+              "unit": "percentunit",
+              "min": 0,
+              "max": 1,
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "green", "value": null },
+                  { "color": "yellow", "value": 0.7 },
+                  { "color": "red", "value": 0.9 }
+                ]
+              }
+            }
+          },
+          "targets": [
+            {
+              "expr": "vllm:kv_cache_usage_perc",
+              "legendFormat": "KV Cache %",
+              "refId": "A"
+            }
+          ]
+        },
+        {
+          "id": 4,
+          "title": "Batch Occupancy (Requests Running)",
+          "type": "timeseries",
+          "gridPos": { "h": 10, "w": 8, "x": 0, "y": 10 },
+          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+          "fieldConfig": {
+            "defaults": {
+              "color": { "mode": "fixed", "fixedColor": "#B877D9" },
+              "custom": {
+                "drawStyle": "line",
+                "fillOpacity": 15,
+                "gradientMode": "scheme",
+                "lineInterpolation": "stepAfter",
+                "lineWidth": 2,
+                "pointSize": 5,
+                "showPoints": "auto",
+                "spanNulls": false,
+                "stacking": { "group": "A", "mode": "none" },
+                "thresholdsStyle": { "mode": "off" }
+              },
+              "unit": "short",
+              "min": 0,
+              "decimals": 0
+            }
+          },
+          "targets": [
+            {
+              "expr": "vllm:num_requests_running",
+              "legendFormat": "Running",
+              "refId": "A"
+            }
+          ]
+        },
+        {
+          "id": 5,
+          "title": "Tensor Core Activity (GPU)",
+          "type": "timeseries",
+          "gridPos": { "h": 10, "w": 8, "x": 8, "y": 10 },
+          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+          "fieldConfig": {
+            "defaults": {
+              "color": { "mode": "fixed", "fixedColor": "#F2495C" },
+              "custom": {
+                "drawStyle": "line",
+                "fillOpacity": 15,
+                "gradientMode": "scheme",
+                "lineInterpolation": "smooth",
+                "lineWidth": 2,
+                "pointSize": 5,
+                "showPoints": "auto",
+                "spanNulls": false,
+                "stacking": { "group": "A", "mode": "none" },
+                "thresholdsStyle": { "mode": "off" }
+              },
+              "unit": "percentunit",
+              "min": 0,
+              "max": 1
+            }
+          },
+          "targets": [
+            {
+              "expr": "DCGM_FI_PROF_PIPE_TENSOR_ACTIVE",
+              "legendFormat": "Tensor Core %",
+              "refId": "A"
+            }
+          ]
+        },
+        {
+          "id": 6,
+          "title": "Queue Depth (Requests Waiting)",
+          "type": "timeseries",
+          "gridPos": { "h": 10, "w": 8, "x": 16, "y": 10 },
+          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+          "fieldConfig": {
+            "defaults": {
+              "color": { "mode": "fixed", "fixedColor": "#FADE2A" },
+              "custom": {
+                "drawStyle": "line",
+                "fillOpacity": 15,
+                "gradientMode": "scheme",
+                "lineInterpolation": "stepAfter",
+                "lineWidth": 2,
+                "pointSize": 5,
+                "showPoints": "auto",
+                "spanNulls": false,
+                "stacking": { "group": "A", "mode": "none" },
+                "thresholdsStyle": { "mode": "area" }
+              },
+              "unit": "short",
+              "min": 0,
+              "decimals": 0,
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "green", "value": null },
+                  { "color": "red", "value": 1 }
+                ]
+              }
+            }
+          },
+          "targets": [
+            {
+              "expr": "vllm:num_requests_waiting",
+              "legendFormat": "Waiting",
+              "refId": "A"
+            }
+          ]
+        }
+      ],
+      "refresh": "5s",
+      "schemaVersion": 39,
+      "tags": ["vllm", "gpu", "inference", "noisy-neighbour"],
+      "templating": {
+        "list": [
+          {
+            "current": { "selected": false, "text": "", "value": "" },
+            "hide": 0,
+            "includeAll": false,
+            "name": "DS_PROMETHEUS",
+            "options": [],
+            "query": "prometheus",
+            "refresh": 1,
+            "regex": "",
+            "type": "datasource"
+          }
+        ]
+      },
+      "time": { "from": "now-15m", "to": "now" },
+      "timepicker": {},
+      "timezone": "browser",
+      "title": "LLM Inference: Noisy Neighbour Observatory",
+      "uid": "noisy-neighbour-obs",
+      "version": 1
+    }
