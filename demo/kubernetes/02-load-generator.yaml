@@ -49,8 +49,7 @@ metadata:
     app: load-generator
 spec:
   selector:
-    matchLabels:
-      app: load-generator
+    app: load-generator
   ports:
     - name: http
       port: 8080
